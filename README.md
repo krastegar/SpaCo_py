@@ -3,14 +3,14 @@
 # Setup for developement:
 
 - Setup a python 3.x venv (usually in `.venv`)
-  - You can run `./scripts/create-venv.sh` to generate one
-- `pip3 install --upgrade pip`
-- Install pip-tools `pip3 install pip-tools`
-- Update dev requirements: `pip-compile --output-file=requirements.dev.txt requirements.dev.in`
-- Update requirements: `pip-compile --output-file=requirements.txt requirements.in`
-- Install dev requirements `pip3 install -r requirements.dev.txt`
-- Install requirements `pip3 install -r requirements.txt`
-- `pre-commit install`
+- pip-compile is buggy for newer versions of python use docker to generate requirements.txt and requirements.dev.txt
+- need to have your requirements.in and requirements.dev.in in appropriate directory
+` sudo docker run --rm -v $(pwd):/app -w /app python:3.8-slim     /bin/bash -c "pip install pip-tools && pip-compile --output-file=requirements.txt requirements.in && pip-compile --output-file=requirements.dev.txt requirements.dev.in" `
+
+- Install dev requirements: 
+` sudo docker run --rm -v $(pwd):/app -w /app python:3.8-slim     /bin/bash -c " pip install -r requirements.txt && pip install -r requirements.txt" `
+
+
 
 ## Update versions
 
