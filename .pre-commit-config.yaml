@@ -14,7 +14,7 @@ repos:
     rev: v1.3.3
     hooks:
       -   id: python-safety-dependencies-check
-          files: requiremtents.txt
+          files: requirements.txt
           args: ["--ignore=pyproject.toml"]
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
