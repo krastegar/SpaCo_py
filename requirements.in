@@ -1,4 +1,7 @@
 numpy
 pandas
 scikit-learn
+tensorflow
+torch==2.2.2
 scipy
+plotly
