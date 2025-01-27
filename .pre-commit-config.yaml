@@ -1,29 +1,23 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 22.12.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version. Does the same thing as black, isort, and flake8 but with RUST syntax!
+    rev: v0.9.3
     hooks:
-      - id: black
-        language_version: python3
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        name: isort
-        args: ["--profile", "black", "--filter-files"]
+      # Run the linter.
+      - id: ruff
+        types_or: [ python, pyi ]
+        args: [ --fix ]
+      # Run the formatter.
+      - id: ruff-format
+        types_or: [ python, pyi ]
   - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.3.1
+    rev: v1.3.3
     hooks:
-      - id: python-safety-dependencies-check
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0
-    hooks:
-      - id: flake8
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: "v2.7.1" # Use the sha or tag you want to point at
-    hooks:
-      - id: prettier
+      -   id: python-safety-dependencies-check
+          files: requiremtents.txt
+          args: ["--ignore=pyproject.toml"]
   - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
@@ -31,3 +25,10 @@ repos:
     rev: 1.4.5
     hooks:
       - id: sqlfluff-lint
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+    -   id: shellcheck
+#       args: ["--severity=warning"]  # Optionally only show errors and warnings
+
+
