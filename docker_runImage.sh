@@ -36,7 +36,10 @@ IMAGE_NAME="seurat_rstudio-server"
 CONTAINER_PORT=8787
 
 # Set the password for the RStudio server
-RSTUDIO_PASSWORD="seurat"
+# Load variables from .env file
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
