@@ -29,7 +29,7 @@
 
 
 # Set the name of the Dockerfile to use
-DOCKERFILE_NAME="Dockerfiles"
+DOCKERFILE_NAME="Dockerfile"
 
 
 # Set the name of the Docker image to build
@@ -81,7 +81,8 @@ fi
 
 # Run the Docker container
 echo "Running the Docker container..."
-docker run -d -p "$CONTAINER_PORT:$CONTAINER_PORT" -v "$(pwd):/home/rstudio/" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
+#docker run -d -p "$CONTAINER_PORT:$CONTAINER_PORT" -v "$(pwd):/home/rstudio/" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
+docker run -d --network=host -v "$(pwd):/home/rstudio/data" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
 
 
 # Check if the Docker container is running
