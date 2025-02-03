@@ -37,3 +37,6 @@
 ## Run `pre-commit` locally.
 
 `pre-commit run --all-files`
+
+## Note:
+passwords have been stored in .env file and are not committed to git. Need to 
