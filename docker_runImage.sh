@@ -70,23 +70,22 @@ fi
 
 
 # Check if the Docker image already exists
-if docker images ls -q "$IMAGE_NAME" &> /dev/null; then
+if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build."
 else
   # Build the Docker image
   echo "Building the Docker image..."
-  docker build -t "$IMAGE_NAME" .
+  sudo docker build -t "$IMAGE_NAME" .
 fi
 
 
 # Run the Docker container
 echo "Running the Docker container..."
-#docker run -d -p "$CONTAINER_PORT:$CONTAINER_PORT" -v "$(pwd):/home/rstudio/" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
-docker run -d --network=host -v "$(pwd):/home/rstudio/data" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
+sudo docker run -d -p "$CONTAINER_PORT:$CONTAINER_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
 
 
 # Check if the Docker container is running
-if docker ps | grep -q "$IMAGE_NAME"; then
+if sudo docker ps | grep -q "$IMAGE_NAME"; then
     echo "Docker container running at http://localhost:$CONTAINER_PORT"
 else
   echo "Docker container not running"
