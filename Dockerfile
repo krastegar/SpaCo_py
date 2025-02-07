@@ -1,4 +1,4 @@
-FROM satijalab/seurat:latest
+FROM satijalab/seurat:5.0.0
 
 # Set environment variables 
 # non interactive mode is for dealing with arguements that require response 
@@ -15,6 +15,15 @@ RUN apt-get update && apt-get install -y \
     libfftw3-dev \
     libgsl-dev \
     libclang-dev \
+    libharfbuzz-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    libfontconfig1-dev \
+    libpng-dev \
+    libfribidi-dev \
+    git \
     wget \
     sudo \
     && apt-get clean \
@@ -24,6 +33,15 @@ RUN apt-get update && apt-get install -y \
 RUN wget https://download2.rstudio.org/server/focal/amd64/rstudio-server-2024.12.0-467-amd64.deb && \
     gdebi -n rstudio-server-2024.12.0-467-amd64.deb && \
     rm rstudio-server-2024.12.0-467-amd64.deb
+
+# Install R packages
+
+# Install devtools package in R
+RUN R -e "install.packages('devtools')"
+
+# Installing IMSBCompBio/SpaCo package from github
+RUN R -e "devtools::install_github('IMSBCompBio/SpaCo')"
+
 
 # Expose RStudio Server port
 EXPOSE 8787
