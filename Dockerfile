@@ -44,7 +44,6 @@ RUN R -e "devtools::install_github('IMSBCompBio/SpaCo')"
 
 RUN R -e "devtools::install_github('satijalab/seurat-data')"
 
-
 # Expose RStudio Server port
 EXPOSE 8787
 
