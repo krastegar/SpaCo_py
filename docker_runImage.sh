@@ -103,4 +103,5 @@ if [ -n "$CONTAINER_ID" ]; then
   echo "Docker container removed successfully"
 else
   echo "No Docker container found to remove"
+
 fi
