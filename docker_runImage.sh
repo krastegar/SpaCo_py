@@ -62,8 +62,10 @@ fi
 # Check if the Dockerfile exists
 if [ ! -f "$DOCKERFILE_NAME" ]; then
   echo "No $DOCKERFILE_NAME found."
+fi
+
 # Check if the Docker image already exists
-elif sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
+if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build."
 else
   # Pulling the Docker image
