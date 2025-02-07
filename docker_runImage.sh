@@ -33,9 +33,7 @@ DOCKERFILE_NAME="Dockerfile"
 
 
 # Set the name of the Docker image to build
-IMAGE_NAME="krastegar0/spaco_env"
-
-
+IMAGE_NAME="krastegar0/seurat_rstudio-server:1.0.2"
 # Set the port to use for the Docker container
 C_PORT=8787
 
@@ -60,7 +58,6 @@ if ! command -v docker &> /dev/null; then
     exit 1
   fi
 fi
-
 
 # Check if the Dockerfile exists
 if [ ! -f "$DOCKERFILE_NAME" ]; then
