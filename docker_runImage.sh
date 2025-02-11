@@ -37,7 +37,6 @@ IMAGE_NAME="krastegar0/seurat_rstudio-server:1.0.2"
 # Set the port to use for the Docker container
 C_PORT=8787
 
-
 # Set the password for the RStudio server
 # Load variables from .env file
 if [ -f .env ]; then
@@ -59,11 +58,6 @@ if ! command -v docker &> /dev/null; then
   fi
 fi
 
-# Check if the Dockerfile exists
-if [ ! -f "$DOCKERFILE_NAME" ]; then
-  echo "No $DOCKERFILE_NAME found."
-fi
-
 # Check if the Docker image already exists
 if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build."
@@ -73,11 +67,9 @@ else
   sudo docker pull "$IMAGE_NAME"
 fi
 
-
 # Run the Docker container
 echo "Running the Docker container..."
 sudo docker run -d -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
-
 
 # Check if the Docker container is running
 if sudo docker ps | grep -q "$IMAGE_NAME"; then
@@ -89,11 +81,9 @@ else
   exit 1
 fi
 
-
 # Keep the program running until the user wants to exit
 echo "Press Enter to exit and remove the Docker container"
 read -rp ""
-
 
 # Remove the running Docker container
 echo "Removing the Docker container..."
