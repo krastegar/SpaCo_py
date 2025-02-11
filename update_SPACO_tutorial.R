@@ -14,7 +14,7 @@ library(sctransform)
 #-------------------------Helper functions ------------------------#
 
 
-source("CustomSCTransform.R")
+
 #-------------------------Helper functions ------------------------#
 
 kidney <- stxKidney.SeuratData::stxKidney
