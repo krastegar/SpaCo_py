@@ -33,12 +33,9 @@ DOCKERFILE_NAME="Dockerfile"
 
 
 # Set the name of the Docker image to build
-IMAGE_NAME="seurat_rstudio-server"
-
-
+IMAGE_NAME="krastegar0/seurat_rstudio-server:1.0.2"
 # Set the port to use for the Docker container
-CONTAINER_PORT=8787
-
+C_PORT=8787
 
 # Set the password for the RStudio server
 # Load variables from .env file
@@ -61,42 +58,32 @@ if ! command -v docker &> /dev/null; then
   fi
 fi
 
-
-# Check if the Dockerfile exists
-if [ ! -f "$DOCKERFILE_NAME" ]; then
-  echo "No $DOCKERFILE_NAME found. Exiting. Check 1"
-  #exit 1
-fi
-
-
 # Check if the Docker image already exists
 if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build."
 else
-  # Build the Docker image
-  echo "Building the Docker image..."
-  sudo docker build -t "$IMAGE_NAME" .
+  # Pulling the Docker image
+  echo "Pulling the Docker image..."
+  sudo docker pull "$IMAGE_NAME"
 fi
-
 
 # Run the Docker container
 echo "Running the Docker container..."
-sudo docker run -d -p "$CONTAINER_PORT:$CONTAINER_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
-
+sudo docker run -d -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
 
 # Check if the Docker container is running
 if sudo docker ps | grep -q "$IMAGE_NAME"; then
-    echo "Docker container running at http://localhost:$CONTAINER_PORT"
+    echo "
+    Docker container running at http://localhost:$C_PORT
+    "
 else
   echo "Docker container not running"
   exit 1
 fi
 
-
 # Keep the program running until the user wants to exit
 echo "Press Enter to exit and remove the Docker container"
 read -rp ""
-
 
 # Remove the running Docker container
 echo "Removing the Docker container..."
@@ -106,4 +93,5 @@ if [ -n "$CONTAINER_ID" ]; then
   echo "Docker container removed successfully"
 else
   echo "No Docker container found to remove"
+
 fi
