@@ -3,5 +3,7 @@
     "**/.venv": true
   },
   "python.pythonPath": ".venv/bin/python",
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "terminal.integrated.env.linux": { "VIRTUAL_ENV": "${workspaceFolder}/.venv" },
   "python.terminal.activateEnvironment": true
 }
