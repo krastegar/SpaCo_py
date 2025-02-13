@@ -3,23 +3,22 @@ from scipy.linalg import eigh
 from sklearn.preprocessing import StandardScaler
 
 class SPACO:
-    def __init__(self, c=0.95, lambda_cut=None):
-        self.c = c
+    def __init__(self, sample_features, neighbormatrix,c=0.95, lambda_cut=None):
         self.lambda_cut = lambda_cut
-        self.Wr = None
-        self.Dr = None
-        self.Vk = None
+        self.SF = sample_features
+        self.A = neighbormatrix
+        self.c = c
+        
+    def preprocess(self):
+        if self.SF.shape[0] < self.SF.shape[1]:  # Ensure X is spots × features
+            self.SF = self.SF.T
+        self.SF = self.SF[:, np.std(self.SF, axis=0) > 0]  # Remove constant features (not sure if this is correct, should we just look at variance or std?)
+        scaler = StandardScaler() # class object to center and scale the data 
+        return scaler.fit_transform(self.SF)
 
-    def preprocess(self, X):
-        if X.shape[0] < X.shape[1]:  # Ensure X is spots × features
-            X = X.T
-        X = X[:, np.std(X, axis=0) > 0]  # Remove constant features
-        scaler = StandardScaler()
-        return scaler.fit_transform(X)
-
-    def pca_whitening(self, X):
-        XT_X = X.T @ X
-        eigvals, eigvecs = eigh(XT_X)
+    def pca_whitening(self):
+        covariance_matrix = self.SF.T @ self.SF
+        eigvals, eigvecs = eigh(covariance_matrix)
         idx = np.argsort(eigvals)[::-1]
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
         
@@ -29,7 +28,7 @@ class SPACO:
         
         self.Wr = eigvecs[:, :r]
         self.Dr = np.diag(eigvals[:r])
-        return X @ self.Wr @ np.linalg.inv(np.sqrt(self.Dr))
+        return self.SF @ self.Wr @ np.linalg.inv(np.sqrt(self.Dr))
 
     def spectral_filtering(self, Y, A):
         n = A.shape[0]
