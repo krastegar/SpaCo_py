@@ -12,16 +12,13 @@
 #   2. Install Docker if it is not already installed.
 #   3. Check if the Dockerfile exists in the current directory.
 #   4. Check if the Docker image already exists.
-#   5. Build the Docker image from the Dockerfile if it does not already exist.
-#   6. Run the Docker container from the built image.
+#   5. Pull the Docker image from the Docker Hub if it does not already exist.
+#   6. Run the Docker container.
 #   7. Verify that the Docker container is running and accessible at http://localhost:8787.
 #   8. Wait for user input to exit and remove the Docker container.
 #   9. Remove the running Docker container.
 #
-# Requirements:
-#   - Docker installed and running on the system.
-#   - The Dockerfile and supporting files in the same directory as the script.
-#
+###############################################################################
 # Author: Kiarash Rastegar
 # GitHub: https://github.com/krastegar
 # Date: 01.02.2025
@@ -50,33 +47,43 @@ fi
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
   echo "Docker is not installed. Installing Docker..."
-  # Install Docker
-  sudo apt-get install -yq docker
 
+  # Install Latest stable version of docker on Ubuntu
+  sudo apt update
+  sudo apt install -y ca-certificates curl gnupg
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt update
+  sudo apt install -y docker-ce docker-ce-cli containerd.io
 
-  # Check if Docker installation was successful
-  if ! command -v docker &> /dev/null; then
-    echo "Failed to install Docker. Exiting."
-    exit 1
-  fi
+else
+    echo "Docker is already installed."
 fi
 
+# Step 2: Ensure Docker is running
+if (! systemctl is-active --quiet docker); then
+    echo "Starting Docker service..."
+    sudo systemctl start docker
+fi
 
 # Check if the Docker image already exists
 if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
-  echo "The $IMAGE_NAME image already exists. Skipping build."
+  echo "The $IMAGE_NAME image already exists. Skipping build / pull."
 else
   # Build the Docker image
-  echo "Building the Docker image..."
+  echo " Pulling the Docker image..."
   sudo docker pull "$IMAGE_NAME"
 fi
 
-
 # Run the Docker container
+# Extract the latest image ID for the specified image
+IMAGE_ID=$(docker images -q "$IMAGE_NAME" | head -n 1)
+
+# Generate a dynamic container name based on the image ID
+CONTAINER_NAME="container_${IMAGE_ID:0:12}"  # Using the first 12 characters of the image ID
 echo "Running the Docker container..."
-sudo docker run -d --rm --user root -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" "$IMAGE_NAME"
-
-
+sudo docker run -d --rm --user root -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
 # Check if the Docker container is running
 if sudo docker ps | grep -q "$IMAGE_NAME"; then
@@ -88,17 +95,13 @@ else
   exit 1
 fi
 
+# Wait for user input to exit and remove the container
+echo "Press any key to stop and remove the container..."
+read -n 1 -s
 
-# Keep the program running until the user wants to exit
-echo "Press Enter to exit and remove the Docker container"
-read -rp ""
+# stop the container to remove it 
+echo "Stopping and removing the container..."
+docker stop "$CONTAINER_NAME"
 
-# Remove the running Docker container
-echo "Removing the Docker container..."
-CONTAINER_ID=$(sudo docker ps -q --filter ancestor="$IMAGE_NAME")
-if [ -n "$CONTAINER_ID" ]; then
-  sudo docker rm -f "$   CONTAINER_ID"
-  echo "Docker container removed successfully"
-else
-  echo "No Docker container found to remove"
-fi
+# Finish clean up of the container
+echo "Cleanup complete. Exiting."

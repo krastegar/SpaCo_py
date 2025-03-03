@@ -2,8 +2,10 @@
   "files.watcherExclude": {
     "**/.venv": true
   },
-  "python.pythonPath": ".venv/bin/python",
-  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.pythonPath": "./.venv/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "terminal.integrated.shellArgs.linux": ["-c", "source ./.venv/bin/activate; bash"],
   "terminal.integrated.env.linux": { "VIRTUAL_ENV": "${workspaceFolder}/.venv" },
   "python.terminal.activateEnvironment": true
 }
+ 
