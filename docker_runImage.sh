@@ -10,10 +10,9 @@
 # Algorithm:
 #   1. Check if Docker is installed and running on the system.
 #   2. Install Docker if it is not already installed.
-#   3. Check if the Dockerfile exists in the current directory.
-#   4. Check if the Docker image already exists.
-#   5. Pull the Docker image from the Docker Hub if it does not already exist.
-#   6. Run the Docker container.
+#   3. Check if the Docker image already exists.
+#   4. Pull the Docker image from the Docker Hub if it does not already exist.
+#   5. Run the Docker container.
 #   7. Verify that the Docker container is running and accessible at http://localhost:8787.
 #   8. Wait for user input to exit and remove the Docker container.
 #   9. Remove the running Docker container.
@@ -71,7 +70,7 @@ fi
 if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build / pull."
 else
-  # Build the Docker image
+  # Pull the Docker image
   echo " Pulling the Docker image..."
   sudo docker pull "$IMAGE_NAME"
 fi

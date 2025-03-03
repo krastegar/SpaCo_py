@@ -96,7 +96,6 @@ class SPACO:
         """
         # Ensure X is spots × features by ensuring dimensions would match theory
         # -------THIS ACTUALLY MIGHT BE UNNECESSARY and COULD CAUSE A bug------- #
-        X: np.ndarray
         if X.shape[0] < X.shape[1]:
             X = X.T
         # -------THIS ACTUALLY MIGHT BE UNNECESSARY and COULD CAUSE A bug------- #
@@ -108,7 +107,42 @@ class SPACO:
         scaler = StandardScaler()
         return scaler.fit_transform(X)
 
-    def pca_whitening(self):
+    def _orthogonalize(self, X, A, nSpacs):
+        """
+        Version of QR factorization that Achim, David and Niklaus came up with
+        for the SPACO algorithm. Want to talk to achim about replacing this whole thing
+        just with np.linalg.qr() function. This implents a gram-schmidt orthogonalization
+        of the columns of the projection matrix X and returns a Q.
+        """
+
+        # preFactor = 1 # not sure what this is for
+
+        # getting number of rows and columns of the projection matrix X
+        m = X.shape[0]
+        n = X.shape[1]
+        if m < n:
+            raise ValueError(
+                "The number of rows of the projection matrix must be greater than or equal to the number of columns."
+            )
+        Q: np.ndarray = np.zeros((m, n))  # initializing the orthogonalized matrix
+        norms: np.ndarray = np.zeros(
+            n
+        )  # initializing the norms of the columns of the projection matrix (this is a vector)
+        for k in range(1, nSpacs):
+            Q[:, k] = X[
+                :, k
+            ]  # setting the k-th column of the orthogonalized matrix to the k-th column of the projection matrix
+            if k > 1:
+                for i in range(1, k - 1):
+                    repeated_value: np.ndarray = np.repeat(
+                        (Q[:, k]) @ A @ Q[:, i] / (Q[:, i] @ A @ Q[:, i]), m
+                    )
+                    Q[:, k] = Q[:, k] - repeated_value * Q[:, i]
+            norms[k] = np.sqrt(Q[:, k] @ A @ Q[:, k])
+            Q[:, k] = Q[:, k] / norms[k]  # not sure why in R version its c(Norms[k])
+        return Q
+
+    def _pca_whitening(self):
         # This function is most likely going to be replaced by sklearn pca function, with whitening set to true
         # center data and scale data
         centered_scaled = self.SF
@@ -140,7 +174,7 @@ class SPACO:
         self.Dr = np.diag(eigvals[:r])
         return self.SF @ self.Wr @ np.linalg.inv(np.sqrt(self.Dr))
 
-    def spectral_filtering(
+    def _spectral_filtering(
         self,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -163,7 +197,7 @@ class SPACO:
             The computed graph Laplacian.
         """
         # Declaring variables
-        Y: np.ndarray = self.pca_whitening()
+        Y: np.ndarray = self._pca_whitening()
         A: np.ndarray = self.A
         eigvals: np.ndarray
         eigvecs: np.ndarray
@@ -207,7 +241,7 @@ class SPACO:
 
         # getting the sorted and reduced most relevant eigenvalues and eigen vectors from spectral filtering
         sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L = (
-            self.spectral_filtering()
+            self._spectral_filtering()
         )
 
         # Generating orthonormal matrix in SPACO space
@@ -242,4 +276,5 @@ class SPACO:
         sigma: np.ndarray = np.linalg.eigvalsh(Vk.T @ L @ L @ Vk)
 
         # test_statistic : float = np.linalg.norm(self.Vk.T @ L @ x) ** 2
-        return sigma
+
+        return sigma  # for now we keep this here for the pre-commit to work
