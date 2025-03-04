@@ -45,6 +45,7 @@
 
 import numpy as np
 from scipy.linalg import eigh
+from scipy.stats import chi2
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
 
@@ -94,11 +95,6 @@ class SPACO:
         Returns:
             Preprocessed Spots × Features array
         """
-        # Ensure X is spots × features by ensuring dimensions would match theory
-        # -------THIS ACTUALLY MIGHT BE UNNECESSARY and COULD CAUSE A bug------- #
-        if X.shape[0] < X.shape[1]:
-            X = X.T
-        # -------THIS ACTUALLY MIGHT BE UNNECESSARY and COULD CAUSE A bug------- #
 
         # Remove constant features
         X = self.SF[:, np.var(X, axis=0) > 0]
@@ -144,6 +140,8 @@ class SPACO:
 
     def _pca_whitening(self):
         # This function is most likely going to be replaced by sklearn pca function, with whitening set to true
+        # Should there be a check to ensure that the matrix is spots x features?
+
         # center data and scale data
         centered_scaled = self.SF
 
@@ -250,31 +248,83 @@ class SPACO:
         Pspac: np.ndarray = Vk @ Vk.T @ L @ sample_feature_matrix
         return Pspac, Vk, L
 
-    def spaco_test(self):
+    def _sigma_eigenvalues(self) -> np.ndarray:
         """
-        Perform a statistical test on the input data with SPACO.
+        Compute the eigenvalues of the transformed matrix L @ Sk @ Sk.T @ L.
 
-        This method computes a test statistic and its associated eigenvalues
-        for a given input sample and graph Laplacian matrix using the SPACO
-        framework. The test statistic is based on the norm of the projection
-        of the sample data onto the SPACO space, and the eigenvalues are
-        derived from the double application of the graph Laplacian to the
-        SPACO projection matrix.
+        This method computes the eigenvalues of the transformed matrix L @ Sk @ Sk.T @ L,
+        where Sk is the matrix composed of the first nSpacs - 1 columns of the
+        projection matrix Pspac. The eigenvalues are used as the coefficients
+        to compute the test statistic.
 
         Returns
         -------
-        test_statistic : float
-            The calculated test statistic for the input sample.
-        sigma : np.ndarray
-            The eigenvalues of the SPACO projection matrix with respect to
-            the graph Laplacian, shape (n_samples,).
+        sigma: np.ndarray
+            The eigenvalues of the transformed matrix.
         """
-
+        Pspac: np.ndarray
+        Vk: np.ndarray
+        L: np.ndarray
         Pspac, Vk, L = self.spaco_projection()
 
-        # using np.linalg.eigvalsh() to get the eigenvalues only
-        sigma: np.ndarray = np.linalg.eigvalsh(Vk.T @ L @ L @ Vk)
+        # Compute the number of SPACO components
+        nSpacs: int = Pspac.shape[
+            1
+        ]  # not sure if this is how we get the number of SPACO components
 
-        # test_statistic : float = np.linalg.norm(self.Vk.T @ L @ x) ** 2
+        # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
+        projection: np.ndarray = self._orthogonalize(Vk, self.A, nSpacs)
+        Sk: np.ndarray = projection[
+            :, :nSpacs
+        ]  # in the R code, it is S = projection[, 1:nSpacs]
 
-        return sigma  # for now we keep this here for the pre-commit to work
+        # Compute the transformed matrix L @ Sk @ Sk.T @ L
+        sigma: np.ndarray = L @ Sk @ Sk.T @ L
+
+        # Compute the eigenvalues of the sigma matrix
+        sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
+
+        return sigma_eigh, L, sigma, nSpacs
+
+    def _psum_chisq(self, test_stat, lb, df, lower_tail=False):
+        # Compute the p-value for the chi-squared distribution
+        p_val = chi2.sf(test_stat, df=df, loc=lb)
+        if lower_tail:
+            p_val = 1 - p_val
+        return p_val
+
+    def spaco_test(self, x: np.ndarray) -> float:
+        """
+        Compute the spatially variable test statistic for any given input vector x.
+
+        Returns
+        -------
+        sigma: np.ndarray
+            The eigenvalues of the transformed matrix.
+        """
+        # Declaring variables
+        L: np.ndarray
+        sigma_eigh: np.ndarray
+        sigma: np.ndarray
+        nSpacs: int
+
+        # Scaling input vector (should this just be centered and not scaled? )
+        gene: np.ndarray = self._preprocess(x)
+
+        # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
+        sigma_eigh, L, sigma, nSpacs = self._sigma_eigenvalues()
+
+        # Normalize the scaled data
+        gene = gene / np.repeat(np.sqrt(gene.T @ L @ gene), len(gene))
+
+        # Compute the test statistic
+        test_statistic: float = gene.T @ sigma @ gene
+
+        # pval test statistic
+        pVal: float = self._psum_chisq(
+            test_stat=test_statistic,
+            lb=sigma_eigh[:nSpacs],
+            df=np.repeat(1, nSpacs),
+        )
+
+        return pVal, test_statistic
