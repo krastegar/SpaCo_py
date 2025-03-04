@@ -288,7 +288,7 @@ class SPACO:
 
     def _psum_chisq(self, test_stat, lb, df, lower_tail=False):
         # Compute the p-value for the chi-squared distribution
-        p_val = chi2.sf(test_stat, df=df, loc=lb)
+        p_val = chi2.cdf(test_stat, df=df, loc=lb)
         if lower_tail:
             p_val = 1 - p_val
         return p_val
