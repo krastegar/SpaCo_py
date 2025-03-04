@@ -1,0 +1,39 @@
+# notes and questions on SCA.R portion
+###################CODE###########################
+
+  # Extract data and neighbors
+  data <- SpaCoObject@data
+  neighbourIndexMatrix <- SpaCoObject@neighbours
+  n <- nrow(data)
+  p <- ncol(data)
+  W <- sum(neighbourIndexMatrix)
+###################CODE###########################
+- This portion of the code is just extracting the data and neighbors from the SpaCoObject object
+==Q: Should this be asked as input or should this be extracted from raw data?
+A:
+
+###################CODE###########################
+  # Compute Graph Laplacian
+  computeGraphLaplacian <- function(neighbourIndexMatrix) {
+    if(class(neighbourIndexMatrix) == "dgCMatrix")
+    {
+      W <- sum(neighbourIndexMatrix@x)
+      n <- neighbourIndexMatrix@Dim[1]
+      neighbourIndexMatrix@x <- neighbourIndexMatrix@x / W
+      graphLaplacian <- neighbourIndexMatrix + Matrix::Diagonal(n, 1 / n)
+    }else
+    {
+      W <- sum(neighbourIndexMatrix)
+      n <- nrow(neighbourIndexMatrix)
+      neighbourIndexMatrix <- neighbourIndexMatrix / W
+      graphLaplacian <- neighbourIndexMatrix + diag(1 / n, n)
+    }
+  }
+###################CODE###########################
+- Computing the graph Laplacian (called L in psuedo-code) Achim says it is the sum of the neighbourIndexMatrix
+==Q: If we generate the neighbourIndexMatrix via kernels or other methods is it still a sum? 
+
+(NO code this time, But do we still want the reduce spots argument)
+
+###################CODE###########################
+
