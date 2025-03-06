@@ -76,11 +76,11 @@ class SPACO:
         """
         self.percentile: int = percentile
         self.lambda_cut: int = lambda_cut
-        self.SF: np.ndarray = self._preprocess(sample_features)
+        self.SF: np.ndarray = self.__preprocess(sample_features)
         self.A: np.ndarray = neighbormatrix
         self.c: float = c
 
-    def _preprocess(self, X: np.ndarray) -> np.ndarray:
+    def __preprocess(self, X: np.ndarray) -> np.ndarray:
         """
         Preprocess the sample features array.
 
@@ -97,13 +97,13 @@ class SPACO:
         """
 
         # Remove constant features
-        X = self.SF[:, np.var(X, axis=0) > 0]
+        X = X[:, np.var(X, axis=0) > 0]
 
         # returning scaled and centered features (using z-scaling)
         scaler = StandardScaler()
         return scaler.fit_transform(X)
 
-    def _orthogonalize(self, X, A, nSpacs):
+    def __orthogonalize(self, X, A, nSpacs):
         """
         Version of QR factorization that Achim, David and Niklaus came up with
         for the SPACO algorithm. Want to talk to achim about replacing this whole thing
@@ -120,7 +120,9 @@ class SPACO:
             raise ValueError(
                 "The number of rows of the projection matrix must be greater than or equal to the number of columns."
             )
-        Q: np.ndarray = np.zeros((m, n))  # initializing the orthogonalized matrix
+        Q: np.ndarray = np.zeros(
+            (m, n)
+        )  # initializing the orthogonalized (unitary) matrix
         norms: np.ndarray = np.zeros(
             n
         )  # initializing the norms of the columns of the projection matrix (this is a vector)
@@ -138,7 +140,7 @@ class SPACO:
             Q[:, k] = Q[:, k] / norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
-    def _pca_whitening(self):
+    def __pca_whitening(self):
         # This function is most likely going to be replaced by sklearn pca function, with whitening set to true
         # Should there be a check to ensure that the matrix is spots x features?
 
@@ -172,7 +174,7 @@ class SPACO:
         self.Dr = np.diag(eigvals[:r])
         return self.SF @ self.Wr @ np.linalg.inv(np.sqrt(self.Dr))
 
-    def _spectral_filtering(
+    def __spectral_filtering(
         self,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -195,7 +197,7 @@ class SPACO:
             The computed graph Laplacian.
         """
         # Declaring variables
-        Y: np.ndarray = self._pca_whitening()
+        Y: np.ndarray = self.__pca_whitening()
         A: np.ndarray = self.A
         eigvals: np.ndarray
         eigvecs: np.ndarray
@@ -235,20 +237,26 @@ class SPACO:
         projected_data: np.ndarray
             The projected sample features in the SPACO space.
         """
-        sample_feature_matrix: np.ndarray = self.SF
+        # Declaring variables
+        U: np.ndarray
+        Vk: np.ndarray
+        Pspac: np.ndarray
+        sample_feature_matrix: np.ndarray
+
+        sample_feature_matrix = self.SF
 
         # getting the sorted and reduced most relevant eigenvalues and eigen vectors from spectral filtering
         sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L = (
-            self._spectral_filtering()
+            self.__spectral_filtering()
         )
 
         # Generating orthonormal matrix in SPACO space
-        U: np.ndarray = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
-        Vk: np.ndarray = whitened_data @ U
-        Pspac: np.ndarray = Vk @ Vk.T @ L @ sample_feature_matrix
+        U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
+        Vk = whitened_data @ U
+        Pspac = Vk @ Vk.T @ L @ sample_feature_matrix
         return Pspac, Vk, L
 
-    def _sigma_eigenvalues(self) -> np.ndarray:
+    def __sigma_eigenvalues(self) -> np.ndarray:
         """
         Compute the eigenvalues of the transformed matrix L @ Sk @ Sk.T @ L.
 
@@ -262,31 +270,31 @@ class SPACO:
         sigma: np.ndarray
             The eigenvalues of the transformed matrix.
         """
-        Pspac: np.ndarray
+        # Declaring variables
         Vk: np.ndarray
         L: np.ndarray
-        Pspac, Vk, L = self.spaco_projection()
+        _, Vk, L = self.spaco_projection()
 
         # Compute the number of SPACO components
-        nSpacs: int = Pspac.shape[
+        nSpacs: int = _.shape[
             1
         ]  # not sure if this is how we get the number of SPACO components
 
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
-        projection: np.ndarray = self._orthogonalize(Vk, self.A, nSpacs)
+        projection: np.ndarray = self.__orthogonalize(Vk, self.A, nSpacs)
         Sk: np.ndarray = projection[
             :, :nSpacs
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
-        sigma: np.ndarray = L @ Sk @ Sk.T @ L
+        sigma: np.ndarray = L @ Sk @ Sk.T @ L  # SK.T @ L @ L @ Sk
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
 
         return sigma_eigh, L, sigma, nSpacs
 
-    def _psum_chisq(self, test_stat, lb, df, lower_tail=False):
+    def __psum_chisq(self, test_stat, lb, df, lower_tail=False):
         # Compute the p-value for the chi-squared distribution
         p_val = chi2.cdf(test_stat, df=df, loc=lb)
         if lower_tail:
@@ -309,10 +317,10 @@ class SPACO:
         nSpacs: int
 
         # Scaling input vector (should this just be centered and not scaled? )
-        gene: np.ndarray = self._preprocess(x)
+        gene: np.ndarray = self.__preprocess(x)
 
         # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
-        sigma_eigh, L, sigma, nSpacs = self._sigma_eigenvalues()
+        sigma_eigh, L, sigma, nSpacs = self.__sigma_eigenvalues()
 
         # Normalize the scaled data
         gene = gene / np.repeat(np.sqrt(gene.T @ L @ gene), len(gene))
@@ -321,7 +329,7 @@ class SPACO:
         test_statistic: float = gene.T @ sigma @ gene
 
         # pval test statistic
-        pVal: float = self._psum_chisq(
+        pVal: float = self.__psum_chisq(
             test_stat=test_statistic,
             lb=sigma_eigh[:nSpacs],
             df=np.repeat(1, nSpacs),
