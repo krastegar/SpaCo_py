@@ -287,7 +287,7 @@ class SPACO:
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
-        sigma: np.ndarray = L @ Sk @ Sk.T @ L  # SK.T @ L @ L @ Sk
+        sigma: np.ndarray = Sk.T @ L @ L @ Sk  # --L @ Sk @ Sk.T @ L
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
