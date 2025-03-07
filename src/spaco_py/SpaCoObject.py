@@ -48,6 +48,7 @@ from scipy.linalg import eigh
 from scipy.stats import chi2
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 
 
 class SPACO:
@@ -140,42 +141,20 @@ class SPACO:
             Q[:, k] = Q[:, k] / norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
-    def __pca_whitening(self):
-        # This function is most likely going to be replaced by sklearn pca function, with whitening set to true
-        # Should there be a check to ensure that the matrix is spots x features?
+    def __pca_whitening(self, X) -> np.ndarray:
+        """
+        Applies PCA (Principal Component Analysis) whitening to the stored feature matrix.
+        PCA whitening decorrelates the features and scales them to have unit variance.
+        Returns:
+            np.ndarray: The transformed feature matrix after PCA whitening.
+        """
 
-        # center data and scale data
-        centered_scaled = self.SF
+        pca = PCA(whiten=True)
 
-        # Generating Covariance Matrix and Eigenvalue decomposition
-        covariance_matrix = centered_scaled.T @ centered_scaled
-        eigvals, eigvecs = eigh(covariance_matrix)
-        idx = np.argsort(eigvals)[::-1]
-        eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
-
-        # Select the top r eigenvectors, where r is the number of
-        # eigenvectors that explain at least c percent of the variance of the data
-        total_variance: float = np.sum(eigvals)
-        cumulative_variance: np.ndarray = np.cumsum(eigvals) / total_variance
-        r: int = np.searchsorted(cumulative_variance, self.c) + 1
-
-        # Compute the whitening matrix
-        self.Wr: np.ndarray = eigvecs[
-            :, :r
-        ]  # orthonormal matrix composed of the eigenvectors of the covariance matrix
-        self.Dr: np.ndarray = np.diag(eigvals[:r])
-
-        # Compute the whitened data
-        total_variance = np.sum(eigvals)
-        cumulative_variance = np.cumsum(eigvals) / total_variance
-        r = np.searchsorted(cumulative_variance, self.c) + 1
-
-        self.Wr = eigvecs[:, :r]
-        self.Dr = np.diag(eigvals[:r])
-        return self.SF @ self.Wr @ np.linalg.inv(np.sqrt(self.Dr))
+        return pca.fit_transform(X)
 
     def __spectral_filtering(
-        self,
+        self, X, A
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Perform spectral filtering on the whitened data using the graph Laplacian.
@@ -191,23 +170,23 @@ class SPACO:
             The eigenvectors corresponding to the largest eigenvalues after filtering.
         sampled_sorted_eigvals : numpy.ndarray
             The largest eigenvalues after filtering.
-        Y : numpy.ndarray
+        whitened_data : numpy.ndarray
             The whitened data.
         L : numpy.ndarray
             The computed graph Laplacian.
         """
         # Declaring variables
-        Y: np.ndarray = self.__pca_whitening()
-        A: np.ndarray = self.A
+        whitened_data: np.ndarray = self.__pca_whitening(self.SF)
+        neighbor_matrix: np.ndarray = self.A
         eigvals: np.ndarray
         eigvecs: np.ndarray
 
         # Calculating Graph Laplacian and M matrix
-        n: int = A.shape[0]
+        n: int = neighbor_matrix.shape[0]
         L: np.ndarray = (1 / n) * np.eye(n) + (
-            1 / np.abs(A).sum(axis=0)
-        ) * A  # axis=0 -> rows
-        M: np.ndarray = Y.T @ L @ Y
+            1 / np.abs(neighbor_matrix).sum(axis=0)
+        ) * neighbor_matrix  # axis=0 -> rows
+        M: np.ndarray = whitened_data.T @ L @ whitened_data
 
         # Eigenvalue decomposition
         eigvals, eigvecs = eigh(M)
@@ -222,7 +201,7 @@ class SPACO:
         k: int = np.searchsorted(eigvals, self.lambda_cut) + 1
         sampled_sorted_eigvecs: np.ndarray = eigvecs[:, :k]
         sampled_sorted_eigvals: np.ndarray = eigvals[:k]
-        return (sampled_sorted_eigvecs, sampled_sorted_eigvals, Y, L)
+        return (sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L)
 
     def spaco_projection(self) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -296,7 +275,7 @@ class SPACO:
 
     def __psum_chisq(self, test_stat, lb, df, lower_tail=False):
         # Compute the p-value for the chi-squared distribution
-        p_val = chi2.cdf(test_stat, df=df, loc=lb)
+        p_val = chi2.sf(test_stat, df=df, loc=lb)
         if lower_tail:
             p_val = 1 - p_val
         return p_val

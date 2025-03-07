@@ -13,7 +13,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+build*/
 develop-eggs/
 dist/
 downloads/
@@ -153,3 +153,4 @@ static
 
 # Project related ignores (place project related ignores below here)
 data/
+pybind11/

@@ -32,6 +32,7 @@ dependencies = [
     "packaging==24.2",
     "pandas==2.2.3",
     "plotly==6.0.0",
+    "pybind11==2.13.6",
     "python-dateutil==2.9.0.post0",
     "pytz==2025.1",
     "scikit-learn==1.6.1",
@@ -39,7 +40,6 @@ dependencies = [
     "six==1.17.0",
     "sympy==1.13.3",
     "threadpoolctl==3.5.0",
-    "torch==2.2.2",
     "typing-extensions==4.12.2",
     "tzdata==2025.1",
 ]
@@ -48,7 +48,7 @@ dependencies = [
 spaco-py = "spaco_py:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "pybind11"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
