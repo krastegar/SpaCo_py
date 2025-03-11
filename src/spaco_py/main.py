@@ -1,8 +1,8 @@
-import imhoff_prob
+import imhoff
 
 
 def main():
-    print(dir(imhoff_prob))
+    print(dir(imhoff))
 
 
 if __name__ == "__main__":

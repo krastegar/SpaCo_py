@@ -9,10 +9,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(pybind11 REQUIRED)
 
 # Add the target for the Pybind11 module
-pybind11_add_module(imhoff_prob imhoff_prob.cpp)
+pybind11_add_module(imhoff imhoff.cpp)
 
 # Include directories for pybind11
-target_include_directories(imhoff_prob PRIVATE ${pybind11_INCLUDE_DIRS})
+target_include_directories(imhoff PRIVATE ${pybind11_INCLUDE_DIRS})
 
 # Link libraries (if any)
-# target_link_libraries(imhoff PRIVATE <your-libraries>)
+target_link_libraries(imhoff PRIVATE /home/krastegar0/SpaCo_py/src/quadpack/libquadpack.a)
