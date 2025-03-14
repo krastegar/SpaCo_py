@@ -1,16 +1,9 @@
-// Title: Imhof (1961) algorithm
-// Ref. (book or article): {J. P. Imhof, Computing the Distribution of Quadratic Forms in Normal Variables, Biometrika, Volume 48, Issue 3/4 (Dec., 1961), 419-426
-
-// Description:
-// Distribution function (survival function in fact) of quadratic forms in normal variables using Imhof's method.
-
 #include <cmath>
 #include <vector>
 #include <functional>
 #include <numeric>
-#include <boost/math/quadrature/simpson.hpp>
+#include <boost/math/quadrature/gauss_kronrod.hpp>
 #include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
 
 namespace py = pybind11;
 
@@ -54,18 +47,18 @@ extern "C" {
         lambdalen[0] = (int)(((double*)ex)[1]);
         double *lambda;
         lambda = new double[lambdalen[0]];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) lambda[i - 1] = ((double*)ex)[i + 1];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) lambda[i] = ((double*)ex)[i + 1];
         double *h;
         h = new double[lambdalen[0]];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) h[i - 1] = ((double*)ex)[lambdalen[0] + i + 1];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) h[i] = ((double*)ex)[lambdalen[0] + i + 1];
         double *delta2;
         delta2 = new double[lambdalen[0]];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) delta2[i - 1] = ((double*)ex)[2 * lambdalen[0] + i + 1];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) delta2[i] = ((double*)ex)[2 * lambdalen[0] + i + 1];
         double *u;
         u = new double[1];
-        for (i = 1; i <= n; i = i + 1) {
-            u[0] = x[i - 1];
-            x[i - 1] =  imhoffunc(u, lambda, lambdalen, h, xx, delta2);
+        for (i = 0; i <= n; i = i + 1) {
+            u[0] = x[i];
+            x[i] =  imhoffunc(u, lambda, lambdalen, h, xx, delta2);
         }
 
         delete[] xx;
@@ -75,11 +68,14 @@ extern "C" {
         delete[] delta2;
         delete[] u;
     }
+
     double integrate_function(std::function<double(double)> f, double lower_bound, double upper_bound, double epsabs, double epsrel) {
         using namespace boost::math::quadrature;
-        double result = simpson(f, lower_bound, upper_bound, epsabs, epsrel);
+        gauss_kronrod<double, 15> integrator;
+        double result = integrator.integrate(f, lower_bound, upper_bound, epsabs, epsrel);
         return result;
     }
+
     void probQsupx(double *x, double *lambda, int *lambdalen, double *h, double *delta2, double *Qx, double *epsabs, double *epsrel, int *limit) {
         int i;
         void f(double *x, int n, void *ex);
@@ -88,28 +84,29 @@ extern "C" {
         ex = new double[2 + 3 * lambdalen[0]];
         ex[0] = x[0];
         ex[1] = (double)lambdalen[0];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) ex[i + 1] = lambda[i - 1];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) ex[lambdalen[0] + i + 1] = h[i - 1];
-        for (i = 1; i <= lambdalen[0]; i = i + 1) ex[2 * lambdalen[0] + i + 1] = delta2[i - 1];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[i + 1] = lambda[i];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[lambdalen[0] + i + 1] = h[i];
+        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[2 * lambdalen[0] + i + 1] = delta2[i];
 
-        double *result;
-        result = new double[1];
-        double *abserr;
-        abserr = new double[1];
         double lower_bound = 0.0;
         double upper_bound = std::numeric_limits<double>::infinity();
-        integrate_function(f, lower_bound, upper_bound, *epsabs, *epsrel);
-        Qx[0] = 0.5 + result[0] / M_PI;
-
-        epsabs[0] = abserr[0];
+        
+        // using a lambda function to wrap the f function to pass it to the integrator
+        auto f_wrapper = [&](double x) {
+            double result;
+            f(&x, 1, ex);
+            result = x;
+            return result;
+        };
+        
+        double result = integrate_function(f_wrapper, lower_bound, upper_bound, *epsabs, *epsrel);
+        Qx[0] = 0.5 + result / M_PI; // M_PI is defined in cmath as pi
 
         delete[] ex;
-        delete[] result;
-        delete[] abserr;
-
-        return;
     }
 }
+
+
 
 PYBIND11_MODULE(imhoff, m) {
     m.def("theta", &theta, "Calculate theta",

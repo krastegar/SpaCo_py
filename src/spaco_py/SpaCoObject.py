@@ -44,8 +44,8 @@
 # ============================================================================
 
 import numpy as np
+import spaco_py.imhoff as imhoff
 from scipy.linalg import eigh
-from scipy.stats import chi2
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
@@ -81,6 +81,32 @@ class SPACO:
         self.A: np.ndarray = neighbormatrix
         self.c: float = c
 
+    def __remove_constant_features(self, X: np.ndarray) -> np.ndarray:
+        """
+        Remove constant features from the data using variance.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        X : array-like, shape (n_samples, n_features)
+            The input data with constant features removed.
+
+        Raises
+        ------
+        ValueError
+            If all features are constant, a ValueError is raised.
+        """
+        # Remove constant features
+        X = X[:, np.var(X, axis=0) > 0]
+
+        if np.all(X == 0):
+            raise ValueError("No features left after removing constant features.")
+        return X
+
     def __preprocess(self, X: np.ndarray) -> np.ndarray:
         """
         Preprocess the sample features array.
@@ -96,12 +122,13 @@ class SPACO:
         Returns:
             Preprocessed Spots × Features array
         """
+        # Initialize StandardScaler
+        scaler = StandardScaler()
 
-        # Remove constant features
-        X = X[:, np.var(X, axis=0) > 0]
+        # checking to see if the input is a vector
+        X = self.__remove_constant_features(X)
 
         # returning scaled and centered features (using z-scaling)
-        scaler = StandardScaler()
         return scaler.fit_transform(X)
 
     def __orthogonalize(self, X, A, nSpacs):
@@ -141,20 +168,28 @@ class SPACO:
             Q[:, k] = Q[:, k] / norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
-    def __pca_whitening(self, X) -> np.ndarray:
+    def __pca_whitening(self) -> np.ndarray:
         """
-        Applies PCA (Principal Component Analysis) whitening to the stored feature matrix.
+        Applies PCA (Prinzation that Achim, David and Niklaus came up with
+        for the SPACO acipal Component Analysis) whitening to the stored feature matrix.
         PCA whitening decorrelates the features and scales them to have unit variance.
         Returns:
             np.ndarray: The transformed feature matrix after PCA whitening.
         """
+        # Declaring variables
+        x: np.ndarray = self.SF
 
+        # checking to see if the input data is actually centered and scaled
+        if round(np.mean(x)) != 0 and round(np.std(x)) != 1:
+            raise ValueError("The input data is not centered.")
+
+        # PCA whitening sklearn
         pca = PCA(whiten=True)
 
-        return pca.fit_transform(X)
+        return pca.fit_transform(x)
 
     def __spectral_filtering(
-        self, X, A
+        self,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Perform spectral filtering on the whitened data using the graph Laplacian.
@@ -176,7 +211,7 @@ class SPACO:
             The computed graph Laplacian.
         """
         # Declaring variables
-        whitened_data: np.ndarray = self.__pca_whitening(self.SF)
+        whitened_data: np.ndarray = self.__pca_whitening()
         neighbor_matrix: np.ndarray = self.A
         eigvals: np.ndarray
         eigvecs: np.ndarray
@@ -273,11 +308,14 @@ class SPACO:
 
         return sigma_eigh, L, sigma, nSpacs
 
-    def __psum_chisq(self, test_stat, lb, df, lower_tail=False):
+    def __psum_chisq(
+        self, q, eig_vals, epsabs=10 ^ (-6), epsrel=10 ^ (-6), limit=10000
+    ):
+        h = (np.repeat(1, len(eig_vals)),)
+        delta = (np.repeat(0, len(eig_vals)),)
+
         # Compute the p-value for the chi-squared distribution
-        p_val = chi2.sf(test_stat, df=df, loc=lb)
-        if lower_tail:
-            p_val = 1 - p_val
+        p_val = imhoff.probQsupx(q, eig_vals, h, delta, epsabs, epsrel, limit)
         return p_val
 
     def spaco_test(self, x: np.ndarray) -> float:
@@ -296,7 +334,7 @@ class SPACO:
         nSpacs: int
 
         # Scaling input vector (should this just be centered and not scaled? )
-        gene: np.ndarray = self.__preprocess(x)
+        gene: np.ndarray = (x - x.mean()) / x.std()
 
         # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
         sigma_eigh, L, sigma, nSpacs = self.__sigma_eigenvalues()
@@ -309,9 +347,7 @@ class SPACO:
 
         # pval test statistic
         pVal: float = self.__psum_chisq(
-            test_stat=test_statistic,
-            lb=sigma_eigh[:nSpacs],
-            df=np.repeat(1, nSpacs),
+            q=test_statistic, eig_vals=sigma_eigh[:nSpacs], df=np.repeat(1, nSpacs)
         )
 
         return pVal, test_statistic
