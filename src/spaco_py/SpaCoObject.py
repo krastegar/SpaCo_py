@@ -53,7 +53,7 @@ from sklearn.decomposition import PCA
 
 class SPACO:
     def __init__(
-        self, sample_features, neighbormatrix, c=0.95, lambda_cut=90, percentile=95
+        self, sample_features, neighbormatrix, c=0.95, lambda_cut=None, percentile=95
     ):
         """
         Initialize a SpaCo object.
@@ -78,7 +78,7 @@ class SPACO:
         self.percentile: int = percentile
         self.lambda_cut: int = lambda_cut
         self.SF: np.ndarray = self.__preprocess(sample_features)
-        self.A: np.ndarray = neighbormatrix
+        self.A: np.ndarray = self.__check_if_square(neighbormatrix)
         self.c: float = c
 
     def __remove_constant_features(self, X: np.ndarray) -> np.ndarray:
@@ -131,6 +131,22 @@ class SPACO:
         # returning scaled and centered features (using z-scaling)
         return scaler.fit_transform(X)
 
+    def __check_if_square(self, X: np.ndarray) -> bool:
+        """
+        Check if the input data is a square matrix.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The input data.
+
+        """
+        if X.shape[0] != X.shape[1]:
+            raise ValueError(
+                "The input data is not a square matrix. Please provide a square matrix."
+            )
+        return X
+
     def __orthogonalize(self, X, A, nSpacs):
         """
         Version of QR factorization that Achim, David and Niklaus came up with
@@ -180,9 +196,10 @@ class SPACO:
         x: np.ndarray = self.SF
 
         # checking to see if the input data is actually centered and scaled
-        if round(np.mean(x)) != 0 and round(np.std(x)) != 1:
+        if round(x.mean(), 2) != 0 and round(x.std(), 2) != 1:
             raise ValueError("The input data is not centered.")
 
+        # np.allclose(x.std(axis=1), np.ones(len(unique_sums)), atol=1e-4)
         # PCA whitening sklearn
         pca = PCA(whiten=True)
 
@@ -219,8 +236,8 @@ class SPACO:
         # Calculating Graph Laplacian and M matrix
         n: int = neighbor_matrix.shape[0]
         L: np.ndarray = (1 / n) * np.eye(n) + (
-            1 / np.abs(neighbor_matrix).sum(axis=0)
-        ) * neighbor_matrix  # axis=0 -> rows
+            1 / np.abs(neighbor_matrix).sum()
+        ) * neighbor_matrix
         M: np.ndarray = whitened_data.T @ L @ whitened_data
 
         # Eigenvalue decomposition
@@ -232,10 +249,10 @@ class SPACO:
         if self.lambda_cut is None:
             self.lambda_cut: float = np.median(eigvals)
 
-        # k is the index of the last eigen value that is greater than or equal to  lambda_cut
-        k: int = np.searchsorted(eigvals, self.lambda_cut) + 1
+        k: int = len(eigvals[eigvals >= self.lambda_cut])  # index where lambda cut is
         sampled_sorted_eigvecs: np.ndarray = eigvecs[:, :k]
         sampled_sorted_eigvals: np.ndarray = eigvals[:k]
+
         return (sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L)
 
     def spaco_projection(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -266,6 +283,7 @@ class SPACO:
 
         # Generating orthonormal matrix in SPACO space
         U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
+        print(f"First few vecs of view: {U[:, :5]}")
         Vk = whitened_data @ U
         Pspac = Vk @ Vk.T @ L @ sample_feature_matrix
         return Pspac, Vk, L
@@ -290,9 +308,7 @@ class SPACO:
         _, Vk, L = self.spaco_projection()
 
         # Compute the number of SPACO components
-        nSpacs: int = _.shape[
-            1
-        ]  # not sure if this is how we get the number of SPACO components
+        nSpacs: int = Vk.shape[1]
 
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
         projection: np.ndarray = self.__orthogonalize(Vk, self.A, nSpacs)
@@ -304,7 +320,7 @@ class SPACO:
         sigma: np.ndarray = Sk.T @ L @ L @ Sk  # --L @ Sk @ Sk.T @ L
 
         # Compute the eigenvalues of the sigma matrix
-        sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
+        sigma_eigh: np.ndarray = eigh(sigma)
 
         return sigma_eigh, L, sigma, nSpacs
 
@@ -315,6 +331,9 @@ class SPACO:
         delta = (np.repeat(0, len(eig_vals)),)
 
         # Compute the p-value for the chi-squared distribution
+        print(
+            "Computing p-value for the weighted sum of chi-squared distribution, using imhoff algorithm...."
+        )
         p_val = imhoff.probQsupx(q, eig_vals, h, delta, epsabs, epsrel, limit)
         return p_val
 
@@ -351,3 +370,8 @@ class SPACO:
         )
 
         return pVal, test_statistic
+
+
+if __name__ == "__main__":
+    x = np.linspace(0, 100, 10)
+    None

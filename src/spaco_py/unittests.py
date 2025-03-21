@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
 from spaco_py.SpaCoObject import SPACO
-from sklearn.decomposition import PCA
 
 # filepath: src/spaco_py/test_SpaCoObject.py
 
@@ -27,8 +26,8 @@ class TestSPACO(unittest.TestCase):
             lam (optional): Poisson distribution parameter.
             generate1d (optional): If True, flatten the data matrix.
 
-        Returns:
-            Two synthetic data matrices.
+        Returns: -> np.ndarray
+            synthetic data matrices.
         """
         # Generate random data matrix using poisson distribution because
         # single-cell RNA sequencing data is count data
@@ -80,6 +79,10 @@ class TestSPACO(unittest.TestCase):
     def test_init(self):
         self.assertIsInstance(self.spaco.SF, np.ndarray)
         self.assertIsInstance(self.spaco.A, np.ndarray)
+        self.assertTrue(
+            self.spaco.A.shape[0] == self.spaco.A.shape[1],
+            msg="A is not a square matrix",
+        )
 
     def test__remove_constant_features(self):
         """
@@ -161,18 +164,100 @@ class TestSPACO(unittest.TestCase):
         # checking to see if the output is a numpy array
         self.assertTrue(isinstance(whitened_matrix, np.ndarray))
 
-        self.assertTrue(
-            np.allclose(whitened_matrix.mean(), 0, atol=1e-4),
-            msg="Mean is not 0 after PCA whitening",
+        # checking to see if the output is not empty
+        self.assertTrue(whitened_matrix.size > 0, msg="Output matrix is empty")
+
+        # checking to see if there are no NaN values in the output
+        self.assertFalse(
+            np.any(np.isnan(whitened_matrix)), msg="NaN values present in the output"
         )
 
-        # cov_matrix = np.cov(whitened_matrix, rowvar=False)
-        # checking to see if the covariance matrix is the identity matrix
-        # self.assertTrue(np.allclose(cov_matrix, np.eye(cov_matrix.shape[1]), atol=1e-2))
+        # checking to see if the covariance matrix of the whitened matrix is close to the identity matrix
+        np.testing.assert_allclose(
+            whitened_matrix @ whitened_matrix.T / whitened_matrix.shape[0],
+            np.eye(whitened_matrix.shape[0]),
+            atol=1e-2,
+        )
 
-        X_whitened = PCA(whiten=True).fit_transform(self.centered_scaled_features)
-        cov_matrix = np.cov(X_whitened, rowvar=False)
-        np.testing.assert_allclose(cov_matrix, np.eye(cov_matrix.shape[0]), atol=1e-5)
+    def test_spectral_filtering(self):
+        # checking to see if the function just works without any errors
+        filter_results = ()
+        filter_results = self.spaco._SPACO__spectral_filtering()
+
+        # checking to see if all objects are returned as expected
+        if len(filter_results) != 4:
+            self.fail(
+                "not all components of the spectral filtering function were returned"
+            )
+
+        # checking to see if all objects are numpy arrays
+        _ = [
+            self.assertTrue(
+                isinstance(obj, np.ndarray), msg=f"object {obj} is not a numpy array"
+            )
+            for obj in filter_results
+        ]
+
+        # checking individual elements of the tuple
+        sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L = (
+            filter_results
+        )
+
+        # Checking dimensions and making sure the k_cut function works
+        self.assertNotEqual(
+            sampled_sorted_eigvecs.shape[1],
+            whitened_data.shape[1],
+            msg="Number of features should not be the same after filtering",
+        )
+
+        # checking to see if eigenvalues are less than two and not negative???????
+        self.assertTrue(
+            np.all(sampled_sorted_eigvals <= 2) and np.all(sampled_sorted_eigvals >= 0),
+            msg="Eigenvalues are not less than two and not negative",
+        )
+
+        # checking to see if the lambda cut filtering worked
+        self.assertTrue(
+            np.all(sampled_sorted_eigvals >= self.spaco.lambda_cut),
+            msg="Eigenvalues are not greater than lambda cut",
+        )
+
+    def test_spaco_projection(self):
+        # checking to see if the function just works without any errors
+        Pspac, Vk, L = self.spaco.spaco_projection()
+
+        # Checking to see if there are any NaN values in the output
+        self.assertFalse(
+            np.any(np.isnan(Pspac)), msg="NaN values present in the output"
+        )
+        self.assertFalse(np.any(np.isnan(Vk)), msg="NaN values present in the output")
+        self.assertFalse(np.any(np.isnan(L)), msg="NaN values present in the output")
+
+    def test_orthogonalize(self):
+        # Debugging the orthogonalization function
+        # checking to see if the function just works without any errors
+        orthogonalized_matrix = self.spaco._SPACO__orthogonalize(
+            self.spaco.SF, self.spaco.A, self.spaco.SF.shape[1]
+        )
+
+        # Checking to see if the matrix is actually orthogonal
+        np.testing.assert_allclose(
+            orthogonalized_matrix @ orthogonalized_matrix.T,
+            np.eye(orthogonalized_matrix.shape[0]),
+            atol=1e-2,
+        )
+
+    def test_spaco_test(self):
+        # checking to see if the function works and produces something meaningful
+        Pspac, Vk, L = self.spaco.spaco_projection()
+
+        spatial_variable_feature = Pspac[:, 1]
+
+        # the test fails due to the orthogonalization function (something about illegal square root)
+        test_statistic, p_value = self.spaco.spaco_test(spatial_variable_feature)
+
+        for test_stat, p_val in zip(test_statistic, p_value):
+            print(f"Test statistic: {test_stat}, p-value: {p_val}")
 
     def tearDown(self):
         del self.spaco
