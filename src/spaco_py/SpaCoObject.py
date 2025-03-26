@@ -147,20 +147,40 @@ class SPACO:
             )
         return X
 
-    def __orthogonalize(self, X, A, nSpacs):
+    def __orthogonalize(
+        self,
+        X: np.ndarray,
+        A: np.ndarray,
+        nSpacs: int,
+        tol: float = np.sqrt(np.finfo(float).eps),
+    ) -> np.ndarray:
         """
         Version of QR factorization that Achim, David and Niklaus came up with
         for the SPACO algorithm. Want to talk to achim about replacing this whole thing
         just with np.linalg.qr() function. This implents a gram-schmidt orthogonalization
         of the columns of the projection matrix X and returns a Q.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            The projection matrix.
+        A : np.ndarray
+            The neighbor matrix.
+        nSpacs : int
+            The number of SpaCo components to retain.
+
+        Returns
+        -------
+        np.ndarray
+            The orthogonalized (unitary) matrix.
         """
 
         # preFactor = 1 # not sure what this is for
 
         # getting number of rows and columns of the projection matrix X
-        m = X.shape[0]
-        n = X.shape[1]
-        if m < n:
+        m: int = X.shape[0]
+        n: int = X.shape[1]
+        if m < nSpacs:
             raise ValueError(
                 "The number of rows of the projection matrix must be greater than or equal to the number of columns."
             )
@@ -170,18 +190,25 @@ class SPACO:
         norms: np.ndarray = np.zeros(
             n
         )  # initializing the norms of the columns of the projection matrix (this is a vector)
-        for k in range(1, nSpacs):
+        for k in range(nSpacs):
+            # print(f"number of iterations for orthogonalization: {k}")
             Q[:, k] = X[
                 :, k
             ]  # setting the k-th column of the orthogonalized matrix to the k-th column of the projection matrix
-            if k > 1:
-                for i in range(1, k - 1):
-                    repeated_value: np.ndarray = np.repeat(
-                        (Q[:, k]) @ A @ Q[:, i] / (Q[:, i] @ A @ Q[:, i]), m
+            if k > 0:
+                for i in range(k - 1):
+                    Q[:, k] -= (
+                        (Q[:, k] @ A @ Q[:, i]) / (Q[:, i] @ A @ Q[:, i]) * Q[:, i]
                     )
-                    Q[:, k] = Q[:, k] - repeated_value * Q[:, i]
-            norms[k] = np.sqrt(Q[:, k] @ A @ Q[:, k])
-            Q[:, k] = Q[:, k] / norms[k]  # not sure why in R version its c(Norms[k])
+            scalar_product = Q[:, k] @ A @ Q[:, k]
+            if scalar_product < 0:
+                raise ValueError(
+                    f"Scalar product is negative: {scalar_product} for kth column {k}"
+                )
+            norms[k] = np.sqrt(scalar_product)
+            if abs(norms[k]) < tol:
+                raise ValueError("MATRIX [A] IS NOT FULL RANK.")
+            Q[:, k] /= norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
     def __pca_whitening(self) -> np.ndarray:
@@ -239,7 +266,8 @@ class SPACO:
             1 / np.abs(neighbor_matrix).sum()
         ) * neighbor_matrix
         M: np.ndarray = whitened_data.T @ L @ whitened_data
-
+        if M.shape[0] != M.shape[1]:
+            raise ValueError("M matrix is not square issue with matrix multiplication")
         # Eigenvalue decomposition
         eigvals, eigvecs = eigh(M)
         idx: np.ndarray = np.argsort(eigvals)[::-1]
@@ -283,7 +311,7 @@ class SPACO:
 
         # Generating orthonormal matrix in SPACO space
         U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
-        print(f"First few vecs of view: {U[:, :5]}")
+        # print(f'First few vecs of view: {U[:, :5]}')
         Vk = whitened_data @ U
         Pspac = Vk @ Vk.T @ L @ sample_feature_matrix
         return Pspac, Vk, L
@@ -320,7 +348,7 @@ class SPACO:
         sigma: np.ndarray = Sk.T @ L @ L @ Sk  # --L @ Sk @ Sk.T @ L
 
         # Compute the eigenvalues of the sigma matrix
-        sigma_eigh: np.ndarray = eigh(sigma)
+        sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
 
         return sigma_eigh, L, sigma, nSpacs
 
