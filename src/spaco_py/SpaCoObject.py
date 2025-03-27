@@ -48,7 +48,6 @@ import spaco_py.imhoff as imhoff
 from scipy.linalg import eigh
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 
 
 class SPACO:
@@ -210,26 +209,63 @@ class SPACO:
             Q[:, k] /= norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
-    def __pca_whitening(self) -> np.ndarray:
+    def __pca_whitening(self, c=0.95):
         """
-        Applies PCA (Prinzation that Achim, David and Niklaus came up with
-        for the SPACO acipal Component Analysis) whitening to the stored feature matrix.
-        PCA whitening decorrelates the features and scales them to have unit variance.
+        Perform PCA whitening on the input data X.
+
+        Parameters:
+        X (numpy array): Input data, shape (n_samples, n_features)
+        c (float): Threshold for selecting the minimal number of principal components. Default is 0.95.
+
         Returns:
-            np.ndarray: The transformed feature matrix after PCA whitening.
+        X_whitened (numpy array): Whitened data, shape (n_samples, n_features)
         """
-        # Declaring variables
-        x: np.ndarray = self.SF
+        # Step 1: Center the data
+        # Subtract the mean of each feature from the dataset, so the dataset has zero mean.
+        # Centering the data means subtracting the mean of the data from
+        # each data point. This is important because whitening is a
+        # linear transformation that depends on the mean of the data.
 
-        # checking to see if the input data is actually centered and scaled
-        if round(x.mean(), 2) != 0 and round(x.std(), 2) != 1:
-            raise ValueError("The input data is not centered.")
+        # Step 2: Compute the covariance matrix
+        # The covariance matrix is a square, symmetric matrix where the
+        # element at row i and column j is the covariance of the i-th and
+        # j-th features of the dataset.
+        # The covariance matrix is a measure of how much the data varies in
+        # each direction. It's a measure of how spread out the data is.
+        cov = np.cov(self.SF, rowvar=False)
+        # print(f"Dimensions of covariance matrix: {cov.shape}")
 
-        # np.allclose(x.std(axis=1), np.ones(len(unique_sums)), atol=1e-4)
-        # PCA whitening sklearn
-        pca = PCA(whiten=True)
+        # Step 3: Compute the eigenvectors and eigenvalues of the covariance matrix
+        # Eigenvalues are scalars and eigenvectors are vectors. Eigenvectors
+        # are the directions in which the data varies the most, and
+        # eigenvalues are the amount of variation in those directions.
+        # The eigenvectors are the principal components of the data.
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
 
-        return pca.fit_transform(x)
+        # Step 4: Sort the eigenvectors by eigenvalue in descending order
+        # The eigenvectors are sorted in descending order of their
+        # corresponding eigenvalues. This is because the largest
+        # eigenvalue/eigenvector pair captures the most variance in the
+        # data.
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Step 5: Select minimal number of components such that the variance threshold c is satisfied
+        total_variance = np.sum(eigenvalues)
+        cumulative_variance = np.cumsum(eigenvalues)
+        r = np.searchsorted(cumulative_variance / total_variance, c) + 1
+
+        # Step 6: Select top r eigenvalues and eigenvectors
+        W_r = eigenvectors[:, :r]
+        D_r = np.diag(eigenvalues[:r])
+        D_r_inv_sqrt = np.linalg.inv(np.sqrt(D_r))
+
+        # Step 7: Compute whitened data
+        X_whitened = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
+        # print(f"Dimensions of whitened data: {X_whitened.shape}")
+
+        return X_whitened
 
     def __spectral_filtering(
         self,
