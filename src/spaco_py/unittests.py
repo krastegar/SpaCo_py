@@ -274,7 +274,9 @@ class TestSPACO(unittest.TestCase):
         # check to see that Q is orthogonal
         np.allclose(Q @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
 
-        #
+        # checking to see if column vectors are normalized
+        column_lengths = np.linalg.norm(Q, axis=1)
+        print(f"length of the column vectors: {column_lengths}")
 
     def tearDown(self):
         del self.spaco

@@ -191,12 +191,11 @@ class SPACO:
             n
         )  # initializing the norms of the columns of the projection matrix (this is a vector)
         for k in range(nSpacs):
-            # print(f"number of iterations for orthogonalization: {k}")
             Q[:, k] = X[
                 :, k
             ]  # setting the k-th column of the orthogonalized matrix to the k-th column of the projection matrix
             if k > 0:
-                for i in range(k - 1):
+                for i in range(k):
                     Q[:, k] -= (
                         (Q[:, k] @ A @ Q[:, i]) / (Q[:, i] @ A @ Q[:, i]) * Q[:, i]
                     )
