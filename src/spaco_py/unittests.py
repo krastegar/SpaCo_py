@@ -272,7 +272,7 @@ class TestSPACO(unittest.TestCase):
         Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
 
         # check to see that Q is orthogonal
-        np.allclose(Q @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
+        np.allclose(Q @ L @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
 
         # checking to see if column vectors are normalized
         column_lengths = np.linalg.norm(Q, axis=1)
