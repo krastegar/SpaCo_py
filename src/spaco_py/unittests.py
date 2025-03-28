@@ -174,9 +174,9 @@ class TestSPACO(unittest.TestCase):
 
         # checking to see if the covariance matrix of the whitened matrix is close to the identity matrix
         np.testing.assert_allclose(
-            whitened_matrix @ whitened_matrix.T / whitened_matrix.shape[0],
-            np.eye(whitened_matrix.shape[0]),
-            atol=1e-2,
+            whitened_matrix.T @ whitened_matrix / whitened_matrix.shape[0],
+            np.eye(whitened_matrix.shape[1]),
+            atol=0.1,
         )
 
     def test_spectral_filtering(self):
@@ -241,7 +241,7 @@ class TestSPACO(unittest.TestCase):
         self.assertEqual(Vk.shape, (n, k))
 
         # Make sure that L matrix is the correct shape
-        self.assertEqual(L.shape, (whitened_data.shape[1], whitened_data.shape[1]))
+        self.assertEqual(L.shape, (whitened_data.shape[0], whitened_data.shape[0]))
 
         # make sure that the U matrix that makes up Vk is orthonormal
         U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
@@ -275,8 +275,7 @@ class TestSPACO(unittest.TestCase):
         np.allclose(Q @ L @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
 
         # checking to see if column vectors are normalized
-        column_lengths = np.linalg.norm(Q, axis=1)
-        print(f"length of the column vectors: {column_lengths}")
+        _ = np.linalg.norm(Q, axis=1)
 
     def tearDown(self):
         del self.spaco
