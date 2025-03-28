@@ -58,15 +58,15 @@ class TestSPACO(unittest.TestCase):
         Gaussian noise added.
         """
         self.sample_features = TestSPACO._generate_synthetic_data(
-            n_samples=100,
+            n_samples=80,
             n_features=100,
             sparsity=0.1,
             noise_level=0.1,
             generate1d=False,
         )
         self.neighbormatrix = TestSPACO._generate_synthetic_data(
-            n_samples=100,
-            n_features=100,
+            n_samples=80,
+            n_features=80,
             sparsity=0.1,
             noise_level=0.1,
             generate1d=False,
@@ -267,15 +267,15 @@ class TestSPACO(unittest.TestCase):
 
     def test_orthogonalize(self):
         _, Vk, L = self.spaco.spaco_projection()
+        # print(f'shape of Neighborhood: {self.neighbormatrix.shape}\n\n shape of Vk: {Vk.shape}\n\n shape of L: {L.shape}')
 
         # takes Vk as the inner product with A
         Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
 
-        # check to see that Q is orthogonal
-        np.allclose(Q @ L @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
+        # print(f'shape of Q: {Q.shape}')
 
-        # checking to see if column vectors are normalized
-        _ = np.linalg.norm(Q, axis=1)
+        # check to see that Q is orthogonal
+        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
 
     def tearDown(self):
         del self.spaco

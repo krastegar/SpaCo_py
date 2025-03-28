@@ -265,6 +265,8 @@ class SPACO:
         X_whitened = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
         # print(f"Dimensions of whitened data: {X_whitened.shape}")
 
+        if X_whitened.shape[0] != self.SF.shape[0]:
+            raise ValueError(f"Whitened Data has wrong dimensions: {X_whitened.shape}")
         return X_whitened
 
     def __spectral_filtering(
@@ -300,9 +302,17 @@ class SPACO:
         L: np.ndarray = (1 / n) * np.eye(n) + (
             1 / np.abs(neighbor_matrix).sum()
         ) * neighbor_matrix
+
+        # condition to determine if the graph laplacian was calculated correctly
+        if neighbor_matrix.shape != L.shape:
+            raise ValueError("Graph Laplacian has incorrect shape")
+
         M: np.ndarray = whitened_data.T @ L @ whitened_data
+
+        # Check to see if M has the correct dimensions
         if M.shape[0] != M.shape[1]:
             raise ValueError("M matrix is not square issue with matrix multiplication")
+
         # Eigenvalue decomposition
         eigvals, eigvecs = eigh(M)
         idx: np.ndarray = np.argsort(eigvals)[::-1]
@@ -372,7 +382,6 @@ class SPACO:
 
         # Compute the number of SPACO components
         nSpacs: int = Vk.shape[1]
-
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
         projection: np.ndarray = self.__orthogonalize(Vk, self.A, nSpacs)
         Sk: np.ndarray = projection[
