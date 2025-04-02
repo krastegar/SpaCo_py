@@ -388,13 +388,8 @@ class SPACO:
             :, :nSpacs
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
-        print(
-            f"Dimensions of Projection: {projection.shape}\n\nDimensions of Sk: {Sk.shape}"
-        )
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
         sigma: np.ndarray = L @ Sk @ Sk.T @ L  # --L @ Sk @ Sk.T @ L
-
-        print(f"shape of sigma: {sigma.shape}")
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
@@ -404,6 +399,7 @@ class SPACO:
     def __psum_chisq(
         self, q, eig_vals, epsabs=float(10 ^ (-6)), epsrel=float(10 ^ (-6)), limit=10000
     ):
+        # matching data types to contstructor definition in C++ file
         h: np.ndarray = np.repeat(1.0, len(eig_vals))
         h: list[float] = h.tolist()
         delta: np.ndarray = np.repeat(0.0, len(eig_vals))
@@ -413,9 +409,6 @@ class SPACO:
         lambda_length: int = len(eig_vals)
 
         # Compute the p-value for the chi-squared distribution
-        print(
-            "Computing p-value for the weighted sum of chi-squared distribution, using imhoff algorithm...."
-        )
         p_val = imhoff.probQsupx(
             q, eig_vals, lambda_length, h, delta, epsabs, epsrel, limit
         )

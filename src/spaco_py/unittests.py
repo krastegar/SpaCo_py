@@ -278,10 +278,19 @@ class TestSPACO(unittest.TestCase):
         np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
 
     def test_spaco_test(self):
+        # checking to see if the function just works without any errors
         Pspac, _, _ = self.spaco.spaco_projection()
 
-        pval, t = self.spaco.spaco_test(Pspac[:, 1])
-        print(f"pval: {pval}, spatial relevance score: {t}")
+        for i in range(Pspac.shape[1]):
+            pval, t = self.spaco.spaco_test(Pspac[:, i])
+
+            # want to make sure that pval is between 0 and 1
+            self.assertTrue(pval >= 0 and pval <= 1, msg="pval is not between 0 and 1")
+
+            # want to make sure that t is between 0 and 1
+            self.assertTrue(t >= 0 and t <= 2, msg="t is not between 0 and 2")
+
+            print(f"pval: {pval}, spatial relevance score: {t}")
 
     def tearDown(self):
         del self.spaco
