@@ -4,7 +4,11 @@
 #include <numeric>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
 #include <pybind11/pybind11.h>
-
+#include <pybind11/complex.h>
+#include <pybind11/stl.h>
+#include <pybind11/numpy.h>
+#include <pybind11/chrono.h>
+#include <pybind11/functional.h>
 namespace py = pybind11;
 
 extern "C" {
@@ -37,36 +41,21 @@ extern "C" {
     typedef void integr_fn(double *x, int n, void *ex);
 
     void f(double *x, int n, void *ex) {
-        double imhoffunc(double *u, double *lambda, int *lambdalen, double *h, double *x, double *delta2);
-        int i;
-        double *xx;
-        xx = new double[1];
-        xx[0] = ((double*)ex)[0];
-        int *lambdalen;
-        lambdalen = new int[1];
-        lambdalen[0] = (int)(((double*)ex)[1]);
-        double *lambda;
-        lambda = new double[lambdalen[0]];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) lambda[i] = ((double*)ex)[i + 1];
-        double *h;
-        h = new double[lambdalen[0]];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) h[i] = ((double*)ex)[lambdalen[0] + i + 1];
-        double *delta2;
-        delta2 = new double[lambdalen[0]];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) delta2[i] = ((double*)ex)[2 * lambdalen[0] + i + 1];
-        double *u;
-        u = new double[1];
-        for (i = 0; i <= n; i = i + 1) {
-            u[0] = x[i];
-            x[i] =  imhoffunc(u, lambda, lambdalen, h, xx, delta2);
-        }
+        double *ex_data = static_cast<double*>(ex);
+        int lambdalen = static_cast<int>(ex_data[1]);
 
-        delete[] xx;
-        delete[] lambdalen;
-        delete[] lambda;
-        delete[] h;
-        delete[] delta2;
-        delete[] u;
+        // Use stack-allocated vectors for lambda, h, and delta2
+        std::vector<double> lambda(ex_data + 2, ex_data + 2 + lambdalen);
+        std::vector<double> h(ex_data + 2 + lambdalen, ex_data + 2 + 2 * lambdalen);
+        std::vector<double> delta2(ex_data + 2 + 2 * lambdalen, ex_data + 2 + 3 * lambdalen);
+
+        double xx = ex_data[0];
+        double u;
+
+        for (int i = 0; i < n; i++) {
+            u = x[i];
+            x[i] = imhoffunc(&u, lambda.data(), &lambdalen, h.data(), &xx, delta2.data());
+        }
     }
 
     double integrate_function(std::function<double(double)> f, double lower_bound, double upper_bound, double epsabs, double epsrel) {
@@ -76,36 +65,37 @@ extern "C" {
         return result;
     }
 
-    void probQsupx(double *x, double *lambda, int *lambdalen, double *h, double *delta2, double *Qx, double *epsabs, double *epsrel, int *limit) {
-        int i;
-        void f(double *x, int n, void *ex);
+    double probQsupx(double x, const std::vector<double>& lambda, int lambdalen, const std::vector<double>& h, const std::vector<double>& delta2, double epsabs, double epsrel, int limit) {
+        // Allocate memory on the stack using std::vector
+        std::vector<double> ex(2 + 3 * lambdalen);
 
-        double *ex;
-        ex = new double[2 + 3 * lambdalen[0]];
-        ex[0] = x[0];
-        ex[1] = (double)lambdalen[0];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[i + 1] = lambda[i];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[lambdalen[0] + i + 1] = h[i];
-        for (i = 0; i <= lambdalen[0]; i = i + 1) ex[2 * lambdalen[0] + i + 1] = delta2[i];
+        // Populate the ex array
+        ex[0] = x;
+        ex[1] = static_cast<double>(lambdalen);
+        for (int i = 0; i < lambdalen; i++) ex[i + 2] = lambda[i];
+        for (int i = 0; i < lambdalen; i++) ex[lambdalen + i + 2] = h[i];
+        for (int i = 0; i < lambdalen; i++) ex[2 * lambdalen + i + 2] = delta2[i];
 
         double lower_bound = 0.0;
         double upper_bound = std::numeric_limits<double>::infinity();
-        
-        // using a lambda function to wrap the f function to pass it to the integrator
+
+        // Using a lambda function to wrap the f function to pass it to the integrator
         auto f_wrapper = [&](double x) {
             double result;
-            f(&x, 1, ex);
+            f(&x, 1, ex.data()); // Pass the raw pointer to the std::vector data
             result = x;
             return result;
         };
-        
-        double result = integrate_function(f_wrapper, lower_bound, upper_bound, *epsabs, *epsrel);
-        Qx[0] = 0.5 + result / M_PI; // M_PI is defined in cmath as pi
 
-        delete[] ex;
+        // Perform the integration
+        double result = integrate_function(f_wrapper, lower_bound, upper_bound, epsabs, epsrel);
+
+        // Compute Qx
+        double Qx = 0.5 + result / M_PI; // M_PI is defined in cmath as pi
+
+        return Qx;
     }
 }
-
 
 
 PYBIND11_MODULE(imhoff, m) {
@@ -116,6 +106,6 @@ PYBIND11_MODULE(imhoff, m) {
     m.def("imhoffunc", &imhoffunc, "Calculate imhoffunc",
           py::arg("u"), py::arg("lambda"), py::arg("lambdalen"), py::arg("h"), py::arg("x"), py::arg("delta2"));
     m.def("probQsupx", &probQsupx, "Calculate probQsupx",
-          py::arg("x"), py::arg("lambda"), py::arg("lambdalen"), py::arg("h"), py::arg("delta2"),
-          py::arg("Qx"), py::arg("epsabs"), py::arg("epsrel"), py::arg("limit"));
+          py::arg("x"), py::arg("lambda"), py::arg("lambdalen"), py::arg("h"), py::arg("delta2"), 
+          py::arg("epsabs"), py::arg("epsrel"), py::arg("limit"));
 }

@@ -277,6 +277,12 @@ class TestSPACO(unittest.TestCase):
         # check to see that Q is orthogonal
         np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
 
+    def test_spaco_test(self):
+        Pspac, _, _ = self.spaco.spaco_projection()
+
+        pval, t = self.spaco.spaco_test(Pspac[:, 1])
+        print(f"pval: {pval}, spatial relevance score: {t}")
+
     def tearDown(self):
         del self.spaco
         del self.sample_features

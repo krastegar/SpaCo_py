@@ -383,13 +383,18 @@ class SPACO:
         # Compute the number of SPACO components
         nSpacs: int = Vk.shape[1]
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
-        projection: np.ndarray = self.__orthogonalize(Vk, self.A, nSpacs)
+        projection: np.ndarray = self.__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
         Sk: np.ndarray = projection[
             :, :nSpacs
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
+        print(
+            f"Dimensions of Projection: {projection.shape}\n\nDimensions of Sk: {Sk.shape}"
+        )
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
-        sigma: np.ndarray = Sk.T @ L @ L @ Sk  # --L @ Sk @ Sk.T @ L
+        sigma: np.ndarray = L @ Sk @ Sk.T @ L  # --L @ Sk @ Sk.T @ L
+
+        print(f"shape of sigma: {sigma.shape}")
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
@@ -397,16 +402,23 @@ class SPACO:
         return sigma_eigh, L, sigma, nSpacs
 
     def __psum_chisq(
-        self, q, eig_vals, epsabs=10 ^ (-6), epsrel=10 ^ (-6), limit=10000
+        self, q, eig_vals, epsabs=float(10 ^ (-6)), epsrel=float(10 ^ (-6)), limit=10000
     ):
-        h = (np.repeat(1, len(eig_vals)),)
-        delta = (np.repeat(0, len(eig_vals)),)
+        h: np.ndarray = np.repeat(1.0, len(eig_vals))
+        h: list[float] = h.tolist()
+        delta: np.ndarray = np.repeat(0.0, len(eig_vals))
+        delta: list[float] = delta.tolist()
+        eig_vals: list[float] = eig_vals.tolist()
+        q: float = float(q)
+        lambda_length: int = len(eig_vals)
 
         # Compute the p-value for the chi-squared distribution
         print(
             "Computing p-value for the weighted sum of chi-squared distribution, using imhoff algorithm...."
         )
-        p_val = imhoff.probQsupx(q, eig_vals, h, delta, epsabs, epsrel, limit)
+        p_val = imhoff.probQsupx(
+            q, eig_vals, lambda_length, h, delta, epsabs, epsrel, limit
+        )
         return p_val
 
     def spaco_test(self, x: np.ndarray) -> float:
@@ -430,20 +442,20 @@ class SPACO:
         # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
         sigma_eigh, L, sigma, nSpacs = self.__sigma_eigenvalues()
 
+        sorted_sigma_eigh = sigma_eigh[::-1]
         # Normalize the scaled data
         gene = gene / np.repeat(np.sqrt(gene.T @ L @ gene), len(gene))
 
         # Compute the test statistic
-        test_statistic: float = gene.T @ sigma @ gene
-
+        test_statistic: float = float(gene.T @ sigma @ gene)
+        # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
         pVal: float = self.__psum_chisq(
-            q=test_statistic, eig_vals=sigma_eigh[:nSpacs], df=np.repeat(1, nSpacs)
+            q=test_statistic, eig_vals=sorted_sigma_eigh[:nSpacs]
         )
 
         return pVal, test_statistic
 
 
 if __name__ == "__main__":
-    x = np.linspace(0, 100, 10)
     None
