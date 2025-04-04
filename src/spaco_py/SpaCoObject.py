@@ -44,7 +44,7 @@
 # ============================================================================
 
 import numpy as np
-import spaco_py.imhoff as imhoff
+import imhoff as imhoff
 from scipy.linalg import eigh
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
@@ -108,7 +108,7 @@ class SPACO:
 
     def __preprocess(self, X: np.ndarray) -> np.ndarray:
         """
-        Preprocess the sample features array.
+        Check to see if data type is numpy array and preprocess the sample features array.
 
         The preprocessing steps are:
         1. Ensure X is spots × features
@@ -121,6 +121,15 @@ class SPACO:
         Returns:
             Preprocessed Spots × Features array
         """
+        # Check if the input is a numpy array
+        if not isinstance(X, np.ndarray):
+            raise ValueError(
+                """
+                Input must be a numpy array (np.ndarray). Input is most likely a pandas dataframe (pd.DataFrame). 
+                Please convert to numpy array using to_numpy() if this is the case.
+                """
+            )
+
         # Initialize StandardScaler
         scaler = StandardScaler()
 
@@ -132,7 +141,7 @@ class SPACO:
 
     def __check_if_square(self, X: np.ndarray) -> bool:
         """
-        Check if the input data is a square matrix.
+        Check if the input data is a square matrix and is numpy array.
 
         Parameters
         ----------
@@ -140,6 +149,14 @@ class SPACO:
             The input data.
 
         """
+        if not isinstance(X, np.ndarray):
+            raise ValueError(
+                """
+                Input must be a numpy array (np.ndarray). Input is most likely a pandas dataframe (pd.DataFrame). 
+                Please convert to numpy array using to_numpy() if this is the case.
+                """
+            )
+        # Check if the input is a square matrix
         if X.shape[0] != X.shape[1]:
             raise ValueError(
                 "The input data is not a square matrix. Please provide a square matrix."

@@ -1,5 +1,6 @@
 import unittest
 import numpy as np
+import pandas as pd
 from spaco_py.SpaCoObject import SPACO
 
 # filepath: src/spaco_py/test_SpaCoObject.py
@@ -126,6 +127,21 @@ class TestSPACO(unittest.TestCase):
         x_centered_scaled = SPACO(
             self.sample_features, self.neighbormatrix
         )._SPACO__preprocess(self.sample_features)
+
+        # checking to see if the condition I put to check if the data is a numpy array
+        # is actually working
+        sf_df = pd.DataFrame(self.sample_features)
+
+        with self.assertRaises(ValueError) as context:
+            SPACO(sf_df, self.neighbormatrix)._SPACO__preprocess(sf_df)
+
+        self.assertIn(
+            "Input must be a numpy array (np.ndarray).",
+            str(context.exception),
+            msg="Did not catch the correct exception for invalid data type",
+        )
+
+        self.assertTrue(isinstance(x_centered_scaled, np.ndarray))
 
         # Checking to see if the output is a non-zero filled numpy array
         # and checking to see if there are no NaN values in the output
@@ -290,7 +306,7 @@ class TestSPACO(unittest.TestCase):
             # want to make sure that t is between 0 and 1
             self.assertTrue(t >= 0 and t <= 2, msg="t is not between 0 and 2")
 
-            print(f"pval: {pval}, spatial relevance score: {t}")
+            # print(f"pval: {pval}, spatial relevance score: {t}")
 
     def tearDown(self):
         del self.spaco
