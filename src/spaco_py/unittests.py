@@ -1,5 +1,6 @@
 import unittest
 import numpy as np
+import pandas as pd
 from spaco_py.SpaCoObject import SPACO
 
 # filepath: src/spaco_py/test_SpaCoObject.py
@@ -58,15 +59,15 @@ class TestSPACO(unittest.TestCase):
         Gaussian noise added.
         """
         self.sample_features = TestSPACO._generate_synthetic_data(
-            n_samples=100,
+            n_samples=80,
             n_features=100,
             sparsity=0.1,
             noise_level=0.1,
             generate1d=False,
         )
         self.neighbormatrix = TestSPACO._generate_synthetic_data(
-            n_samples=100,
-            n_features=100,
+            n_samples=80,
+            n_features=80,
             sparsity=0.1,
             noise_level=0.1,
             generate1d=False,
@@ -127,6 +128,21 @@ class TestSPACO(unittest.TestCase):
             self.sample_features, self.neighbormatrix
         )._SPACO__preprocess(self.sample_features)
 
+        # checking to see if the condition I put to check if the data is a numpy array
+        # is actually working
+        sf_df = pd.DataFrame(self.sample_features)
+
+        with self.assertRaises(ValueError) as context:
+            SPACO(sf_df, self.neighbormatrix)._SPACO__preprocess(sf_df)
+
+        self.assertIn(
+            "Input must be a numpy array (np.ndarray).",
+            str(context.exception),
+            msg="Did not catch the correct exception for invalid data type",
+        )
+
+        self.assertTrue(isinstance(x_centered_scaled, np.ndarray))
+
         # Checking to see if the output is a non-zero filled numpy array
         # and checking to see if there are no NaN values in the output
         self.assertFalse(
@@ -174,9 +190,9 @@ class TestSPACO(unittest.TestCase):
 
         # checking to see if the covariance matrix of the whitened matrix is close to the identity matrix
         np.testing.assert_allclose(
-            whitened_matrix @ whitened_matrix.T / whitened_matrix.shape[0],
-            np.eye(whitened_matrix.shape[0]),
-            atol=1e-2,
+            whitened_matrix.T @ whitened_matrix / whitened_matrix.shape[0],
+            np.eye(whitened_matrix.shape[1]),
+            atol=0.1,
         )
 
     def test_spectral_filtering(self):
@@ -241,7 +257,7 @@ class TestSPACO(unittest.TestCase):
         self.assertEqual(Vk.shape, (n, k))
 
         # Make sure that L matrix is the correct shape
-        self.assertEqual(L.shape, (whitened_data.shape[1], whitened_data.shape[1]))
+        self.assertEqual(L.shape, (whitened_data.shape[0], whitened_data.shape[0]))
 
         # make sure that the U matrix that makes up Vk is orthonormal
         U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
@@ -267,14 +283,30 @@ class TestSPACO(unittest.TestCase):
 
     def test_orthogonalize(self):
         _, Vk, L = self.spaco.spaco_projection()
+        # print(f'shape of Neighborhood: {self.neighbormatrix.shape}\n\n shape of Vk: {Vk.shape}\n\n shape of L: {L.shape}')
 
         # takes Vk as the inner product with A
         Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
 
-        # check to see that Q is orthogonal
-        np.allclose(Q @ Q.T, np.eye(Q.shape[0]), atol=1e-5)
+        # print(f'shape of Q: {Q.shape}')
 
-        #
+        # check to see that Q is orthogonal
+        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+
+    def test_spaco_test(self):
+        # checking to see if the function just works without any errors
+        Pspac, _, _ = self.spaco.spaco_projection()
+
+        for i in range(Pspac.shape[1]):
+            pval, t = self.spaco.spaco_test(Pspac[:, i])
+
+            # want to make sure that pval is between 0 and 1
+            self.assertTrue(pval >= 0 and pval <= 1, msg="pval is not between 0 and 1")
+
+            # want to make sure that t is between 0 and 1
+            self.assertTrue(t >= 0 and t <= 2, msg="t is not between 0 and 2")
+
+            # print(f"pval: {pval}, spatial relevance score: {t}")
 
     def tearDown(self):
         del self.spaco

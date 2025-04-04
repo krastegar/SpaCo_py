@@ -44,11 +44,10 @@
 # ============================================================================
 
 import numpy as np
-import spaco_py.imhoff as imhoff
+import imhoff as imhoff
 from scipy.linalg import eigh
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 
 
 class SPACO:
@@ -109,7 +108,7 @@ class SPACO:
 
     def __preprocess(self, X: np.ndarray) -> np.ndarray:
         """
-        Preprocess the sample features array.
+        Check to see if data type is numpy array and preprocess the sample features array.
 
         The preprocessing steps are:
         1. Ensure X is spots × features
@@ -122,6 +121,15 @@ class SPACO:
         Returns:
             Preprocessed Spots × Features array
         """
+        # Check if the input is a numpy array
+        if not isinstance(X, np.ndarray):
+            raise ValueError(
+                """
+                Input must be a numpy array (np.ndarray). Input is most likely a pandas dataframe (pd.DataFrame). 
+                Please convert to numpy array using to_numpy() if this is the case.
+                """
+            )
+
         # Initialize StandardScaler
         scaler = StandardScaler()
 
@@ -133,7 +141,7 @@ class SPACO:
 
     def __check_if_square(self, X: np.ndarray) -> bool:
         """
-        Check if the input data is a square matrix.
+        Check if the input data is a square matrix and is numpy array.
 
         Parameters
         ----------
@@ -141,6 +149,14 @@ class SPACO:
             The input data.
 
         """
+        if not isinstance(X, np.ndarray):
+            raise ValueError(
+                """
+                Input must be a numpy array (np.ndarray). Input is most likely a pandas dataframe (pd.DataFrame). 
+                Please convert to numpy array using to_numpy() if this is the case.
+                """
+            )
+        # Check if the input is a square matrix
         if X.shape[0] != X.shape[1]:
             raise ValueError(
                 "The input data is not a square matrix. Please provide a square matrix."
@@ -191,12 +207,11 @@ class SPACO:
             n
         )  # initializing the norms of the columns of the projection matrix (this is a vector)
         for k in range(nSpacs):
-            # print(f"number of iterations for orthogonalization: {k}")
             Q[:, k] = X[
                 :, k
             ]  # setting the k-th column of the orthogonalized matrix to the k-th column of the projection matrix
             if k > 0:
-                for i in range(k - 1):
+                for i in range(k):
                     Q[:, k] -= (
                         (Q[:, k] @ A @ Q[:, i]) / (Q[:, i] @ A @ Q[:, i]) * Q[:, i]
                     )
@@ -211,26 +226,65 @@ class SPACO:
             Q[:, k] /= norms[k]  # not sure why in R version its c(Norms[k])
         return Q
 
-    def __pca_whitening(self) -> np.ndarray:
+    def __pca_whitening(self, c=0.95):
         """
-        Applies PCA (Prinzation that Achim, David and Niklaus came up with
-        for the SPACO acipal Component Analysis) whitening to the stored feature matrix.
-        PCA whitening decorrelates the features and scales them to have unit variance.
+        Perform PCA whitening on the input data X.
+
+        Parameters:
+        X (numpy array): Input data, shape (n_samples, n_features)
+        c (float): Threshold for selecting the minimal number of principal components. Default is 0.95.
+
         Returns:
-            np.ndarray: The transformed feature matrix after PCA whitening.
+        X_whitened (numpy array): Whitened data, shape (n_samples, n_features)
         """
-        # Declaring variables
-        x: np.ndarray = self.SF
+        # Step 1: Center the data
+        # Subtract the mean of each feature from the dataset, so the dataset has zero mean.
+        # Centering the data means subtracting the mean of the data from
+        # each data point. This is important because whitening is a
+        # linear transformation that depends on the mean of the data.
 
-        # checking to see if the input data is actually centered and scaled
-        if round(x.mean(), 2) != 0 and round(x.std(), 2) != 1:
-            raise ValueError("The input data is not centered.")
+        # Step 2: Compute the covariance matrix
+        # The covariance matrix is a square, symmetric matrix where the
+        # element at row i and column j is the covariance of the i-th and
+        # j-th features of the dataset.
+        # The covariance matrix is a measure of how much the data varies in
+        # each direction. It's a measure of how spread out the data is.
+        cov = np.cov(self.SF, rowvar=False)
+        # print(f"Dimensions of covariance matrix: {cov.shape}")
 
-        # np.allclose(x.std(axis=1), np.ones(len(unique_sums)), atol=1e-4)
-        # PCA whitening sklearn
-        pca = PCA(whiten=True)
+        # Step 3: Compute the eigenvectors and eigenvalues of the covariance matrix
+        # Eigenvalues are scalars and eigenvectors are vectors. Eigenvectors
+        # are the directions in which the data varies the most, and
+        # eigenvalues are the amount of variation in those directions.
+        # The eigenvectors are the principal components of the data.
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
 
-        return pca.fit_transform(x)
+        # Step 4: Sort the eigenvectors by eigenvalue in descending order
+        # The eigenvectors are sorted in descending order of their
+        # corresponding eigenvalues. This is because the largest
+        # eigenvalue/eigenvector pair captures the most variance in the
+        # data.
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Step 5: Select minimal number of components such that the variance threshold c is satisfied
+        total_variance = np.sum(eigenvalues)
+        cumulative_variance = np.cumsum(eigenvalues)
+        r = np.searchsorted(cumulative_variance / total_variance, c) + 1
+
+        # Step 6: Select top r eigenvalues and eigenvectors
+        W_r = eigenvectors[:, :r]
+        D_r = np.diag(eigenvalues[:r])
+        D_r_inv_sqrt = np.linalg.inv(np.sqrt(D_r))
+
+        # Step 7: Compute whitened data
+        X_whitened = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
+        # print(f"Dimensions of whitened data: {X_whitened.shape}")
+
+        if X_whitened.shape[0] != self.SF.shape[0]:
+            raise ValueError(f"Whitened Data has wrong dimensions: {X_whitened.shape}")
+        return X_whitened
 
     def __spectral_filtering(
         self,
@@ -265,9 +319,17 @@ class SPACO:
         L: np.ndarray = (1 / n) * np.eye(n) + (
             1 / np.abs(neighbor_matrix).sum()
         ) * neighbor_matrix
+
+        # condition to determine if the graph laplacian was calculated correctly
+        if neighbor_matrix.shape != L.shape:
+            raise ValueError("Graph Laplacian has incorrect shape")
+
         M: np.ndarray = whitened_data.T @ L @ whitened_data
+
+        # Check to see if M has the correct dimensions
         if M.shape[0] != M.shape[1]:
             raise ValueError("M matrix is not square issue with matrix multiplication")
+
         # Eigenvalue decomposition
         eigvals, eigvecs = eigh(M)
         idx: np.ndarray = np.argsort(eigvals)[::-1]
@@ -337,15 +399,14 @@ class SPACO:
 
         # Compute the number of SPACO components
         nSpacs: int = Vk.shape[1]
-
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
-        projection: np.ndarray = self.__orthogonalize(Vk, self.A, nSpacs)
+        projection: np.ndarray = self.__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
         Sk: np.ndarray = projection[
             :, :nSpacs
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
-        sigma: np.ndarray = Sk.T @ L @ L @ Sk  # --L @ Sk @ Sk.T @ L
+        sigma: np.ndarray = L @ Sk @ Sk.T @ L  # --L @ Sk @ Sk.T @ L
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
@@ -353,16 +414,21 @@ class SPACO:
         return sigma_eigh, L, sigma, nSpacs
 
     def __psum_chisq(
-        self, q, eig_vals, epsabs=10 ^ (-6), epsrel=10 ^ (-6), limit=10000
+        self, q, eig_vals, epsabs=float(10 ^ (-6)), epsrel=float(10 ^ (-6)), limit=10000
     ):
-        h = (np.repeat(1, len(eig_vals)),)
-        delta = (np.repeat(0, len(eig_vals)),)
+        # matching data types to contstructor definition in C++ file
+        h: np.ndarray = np.repeat(1.0, len(eig_vals))
+        h: list[float] = h.tolist()
+        delta: np.ndarray = np.repeat(0.0, len(eig_vals))
+        delta: list[float] = delta.tolist()
+        eig_vals: list[float] = eig_vals.tolist()
+        q: float = float(q)
+        lambda_length: int = len(eig_vals)
 
         # Compute the p-value for the chi-squared distribution
-        print(
-            "Computing p-value for the weighted sum of chi-squared distribution, using imhoff algorithm...."
+        p_val = imhoff.probQsupx(
+            q, eig_vals, lambda_length, h, delta, epsabs, epsrel, limit
         )
-        p_val = imhoff.probQsupx(q, eig_vals, h, delta, epsabs, epsrel, limit)
         return p_val
 
     def spaco_test(self, x: np.ndarray) -> float:
@@ -386,20 +452,20 @@ class SPACO:
         # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
         sigma_eigh, L, sigma, nSpacs = self.__sigma_eigenvalues()
 
+        sorted_sigma_eigh = sigma_eigh[::-1]
         # Normalize the scaled data
         gene = gene / np.repeat(np.sqrt(gene.T @ L @ gene), len(gene))
 
         # Compute the test statistic
-        test_statistic: float = gene.T @ sigma @ gene
-
+        test_statistic: float = float(gene.T @ sigma @ gene)
+        # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
         pVal: float = self.__psum_chisq(
-            q=test_statistic, eig_vals=sigma_eigh[:nSpacs], df=np.repeat(1, nSpacs)
+            q=test_statistic, eig_vals=sorted_sigma_eigh[:nSpacs]
         )
 
         return pVal, test_statistic
 
 
 if __name__ == "__main__":
-    x = np.linspace(0, 100, 10)
     None

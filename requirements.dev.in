@@ -6,3 +6,4 @@ uv
 pre-commit
 nose
 sqlfluff
+openpyxl
