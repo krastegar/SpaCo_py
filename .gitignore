@@ -155,3 +155,8 @@ static
 data/
 pybind11/
 mouse*/
+*.RData
+*.Rprofile
+.sudo*
+.local*
+.sh_history

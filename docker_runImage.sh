@@ -67,12 +67,12 @@ if (! systemctl is-active --quiet docker); then
 fi
 
 # Check if the Docker image already exists
-if sudo docker images ls -q "$IMAGE_NAME" &> /dev/null; then
+if docker images ls -q "$IMAGE_NAME" &> /dev/null; then
   echo "The $IMAGE_NAME image already exists. Skipping build / pull."
 else
   # Pull the Docker image
   echo " Pulling the Docker image..."
-  sudo docker pull "$IMAGE_NAME"
+  docker pull "$IMAGE_NAME"
 fi
 
 # Run the Docker container
@@ -82,10 +82,10 @@ IMAGE_ID=$(docker images -q "$IMAGE_NAME" | head -n 1)
 # Generate a dynamic container name based on the image ID
 CONTAINER_NAME="container_${IMAGE_ID:0:12}"  # Using the first 12 characters of the image ID
 echo "Running the Docker container..."
-sudo docker run -d --rm --user root -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" --name "$CONTAINER_NAME" "$IMAGE_NAME"
+docker run -d --rm --user root -p "$C_PORT:$C_PORT" -v "$(pwd):/home/rstudio/data_dir" -e "PASSWORD=$RSTUDIO_PASSWORD" --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
 # Check if the Docker container is running
-if sudo docker ps | grep -q "$IMAGE_NAME"; then
+if docker ps | grep -q "$IMAGE_NAME"; then
     echo "
     Docker container running at http://localhost:$C_PORT
     "
