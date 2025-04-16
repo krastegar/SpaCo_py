@@ -303,7 +303,7 @@ class TestSPACO(unittest.TestCase):
             # want to make sure that pval is between 0 and 1
             self.assertTrue(pval >= 0 and pval <= 1, msg="pval is not between 0 and 1")
 
-            # want to make sure that t is between 0 and 1
+            # want to make sure that t is between 0 and 2
             self.assertTrue(t >= 0 and t <= 2, msg="t is not between 0 and 2")
 
             # print(f"pval: {pval}, spatial relevance score: {t}")

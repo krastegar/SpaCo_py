@@ -46,6 +46,8 @@
 import numpy as np
 import imhoff as imhoff
 from scipy.linalg import eigh
+from scipy.sparse.linalg import eigs
+from scipy.stats import t
 from typing import Tuple
 from sklearn.preprocessing import StandardScaler
 
@@ -286,6 +288,132 @@ class SPACO:
             raise ValueError(f"Whitened Data has wrong dimensions: {X_whitened.shape}")
         return X_whitened
 
+    def __shuffle_decomp(self) -> float:
+        """
+        Shuffles the rows of the input matrix X and computes the largest eigenvalue
+        of the shuffled matrix using the eigs function.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        largest_eigenvalue : float
+            The largest eigenvalue of the shuffled matrix.
+        """
+
+        X_shuffled = self.A[np.random.permutation(self.A.shape[0]), :]
+        L = (1 / X_shuffled.shape[0]) * np.eye(X_shuffled.shape[0]) + (
+            1 / np.abs(X_shuffled).sum()
+        ) * X_shuffled
+        whitened_data = self.__pca_whitening()
+        M = whitened_data.T @ L @ whitened_data
+        return eigs(M, k=1, which="LR")[0]
+
+    def __CI_SE(self, results_all: list[float]) -> Tuple[float, float]:
+        """
+        Compute the 95% confidence interval and standard error of the mean for a list of values.
+
+        Parameters
+        ----------
+        results_all : List[float]
+            A list of values to compute the confidence interval and standard error for.
+
+        Returns
+        -------
+        ci_lower : float
+            The lower bound of the 95% confidence interval.
+        ci_upper : float
+            The upper bound of the 95% confidence interval.
+        """
+        # Calculate the mean of the results
+        mean: float = np.mean(results_all)
+
+        # Calculate the standard error of the mean
+        # np.std calculates the standard deviation of the list
+        # Divide by the square root of the number of observations
+        std_error: float = np.std(results_all) / np.sqrt(len(results_all))
+
+        # Determine the t critical value for 95% confidence
+        # t.ppf gives the value of the t-distribution for a given cumulative probability
+        # 0.975 is used to find the two-tailed critical value for 95% confidence
+        # df is degrees of freedom, which is number of observations minus one
+        t_critical: float = t.ppf(0.975, df=len(results_all) - 1)
+
+        # Calculate the margin of error
+        # This is the product of the t critical value and the standard error
+        margin_of_error: float = t_critical * std_error
+
+        # Calculate the lower and upper bounds of the confidence interval
+        ci_lower: float = mean - margin_of_error
+        ci_upper: float = mean + margin_of_error
+
+        return ci_lower, ci_upper
+
+    def replicate(self, n_iterations: int) -> list[float]:
+        """
+        Replicates the __shuffle_decomp method n_iterations times.
+
+        Parameters
+        ----------
+        n_iterations : int
+            The number of times to replicate the __shuffle_decomp method.
+
+        Returns
+        -------
+        results_all : list[float]
+            A list of the results of each replication.
+        """
+        results_all: list[float] = [
+            self.__shuffle_decomp() for _ in range(n_iterations)
+        ]
+
+        return results_all
+
+    def __resample_lambda_cut(
+        self,
+        lambdas: np.ndarray,
+        batch_size: int = 10,
+        n_iterations: int = 100,
+        n_simulations: int = 1000,
+    ) -> float:
+        # shuffle / permute the neighbor matrix
+        results_all: list = self.replicate(n_iterations)
+
+        # calculate the 95 CI and SE
+        ci_lower, ci_upper = self.__CI_SE(results_all)
+
+        lambdas_inCI: np.ndarray = lambdas[
+            (lambdas >= ci_lower) & (lambdas <= ci_upper)
+        ]
+
+        iterations: int = 0
+        # iteratively decreasing the CI interval until the lambdas_inCI is 1
+        # or the number of iterations is greater than n_simulations
+        while len(lambdas_inCI) > 1:
+            iterations += 1
+
+            batch_results = self.replicate(batch_size)
+            results_all.extend(batch_results)
+            ci_lower, ci_upper = self.__CI_SE(results_all)
+            lambdas_inCI = lambdas[(lambdas >= ci_lower) & (lambdas <= ci_upper)]
+
+            if len(lambdas_inCI) < 2:
+                break
+
+            if iterations >= n_simulations:
+                print(
+                    f"Reached maximum number of iterations: {n_simulations}. Stopping early."
+                )
+                return np.mean(lambdas_inCI)
+
+        mean_result = np.mean(results_all)
+        rel_spacs_idx = len(lambdas[lambdas >= mean_result])
+
+        return rel_spacs_idx
+
     def __spectral_filtering(
         self,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -303,7 +431,7 @@ class SPACO:
             The eigenvectors corresponding to the largest eigenvalues after filtering.
         sampled_sorted_eigvals : numpy.ndarray
             The largest eigenvalues after filtering.
-        whitened_data : numpy.ndarray
+        whitened_da ta : numpy.ndarray
             The whitened data.
         L : numpy.ndarray
             The computed graph Laplacian.
