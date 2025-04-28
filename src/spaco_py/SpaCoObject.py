@@ -44,17 +44,29 @@
 # ============================================================================
 
 import numpy as np
-import imhoff as imhoff
+import imhoff 
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigs
 from scipy.stats import t
 from typing import Tuple
+from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import StandardScaler
 
+"""
+Next step is to find a way to not rerun the resampling method more than once across
+all other different methods. I need to find a way for the results to be stored. I really wonder 
+which test are running the method multiple times. I think it is the spaco_test method.
+but not sure.......currently for small dataset it takes 37mins to run whole pipeline.
+I think the issue is that the spaco_test method is called multiple times for each gene in the dataset.
 
+
+Next plan of attack: (26/04/2025)
+1. figure out how to run each method only once
+2. figure out why the matrix Vk does not have expected dimensions (n,k), most likely related to the resampling method. 
+"""
 class SPACO:
     def __init__(
-        self, sample_features, neighbormatrix, c=0.95, lambda_cut=None, percentile=95
+        self, sample_features, neighbormatrix, c=0.95, compute_nSpacs=True, percentile=95
     ):
         """
         Initialize a SpaCo object.
@@ -76,11 +88,32 @@ class SPACO:
         -------
         None
         """
+        # initial variables / attributes
         self.percentile: int = percentile
-        self.lambda_cut: int = lambda_cut
+        self.compute_nSpacs: bool = compute_nSpacs
         self.SF: np.ndarray = self.__preprocess(sample_features)
         self.A: np.ndarray = self.__check_if_square(neighbormatrix)
         self.c: float = c
+
+        # Additional attributes to store intermediate results:
+        self.whitened_data: np.ndarray = self.__pca_whitening()
+        
+        # results of the spectral filtering (self.sampled_sorted_eigvecs, self.sampled_sorted_eigvals, self.graphLaplacian)
+        self.lambda_cut: float = None
+        self.spectral_results: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] = self.__spectral_filtering()
+        self.graphLaplacian: np.ndarray = self.spectral_results[2]
+        self.sampled_sorted_eigvecs: np.ndarray = self.spectral_results[0]
+        self.sampled_sorted_eigvals: np.ndarray = self.spectral_results[1]
+
+        # results of the projection
+        self.Pspac: np.ndarray
+        self.Vk: np.ndarray
+        self.Pspac, self.Vk = self.spaco_projection()
+
+        # results of the test
+        self.sigma: np.ndarray
+        self.sigma_eigh: np.ndarray
+        self.sigma_eigh, self.sigma = self.__sigma_eigenvalues()
 
     def __remove_constant_features(self, X: np.ndarray) -> np.ndarray:
         """
@@ -143,7 +176,7 @@ class SPACO:
 
     def __check_if_square(self, X: np.ndarray) -> bool:
         """
-        Check if the input data is a square matrix and is numpy array.
+        Check if the neighborhood matrix is a square matrix and is numpy array.
 
         Parameters
         ----------
@@ -176,7 +209,7 @@ class SPACO:
         Version of QR factorization that Achim, David and Niklaus came up with
         for the SPACO algorithm. Want to talk to achim about replacing this whole thing
         just with np.linalg.qr() function. This implents a gram-schmidt orthogonalization
-        of the columns of the projection matrix X and returns a Q.
+     self   of the columns of the projection matrix X and returns a Q.
 
         Parameters
         ----------
@@ -281,12 +314,12 @@ class SPACO:
         D_r_inv_sqrt = np.linalg.inv(np.sqrt(D_r))
 
         # Step 7: Compute whitened data
-        X_whitened = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
+        self.whitened_data = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
         # print(f"Dimensions of whitened data: {X_whitened.shape}")
 
-        if X_whitened.shape[0] != self.SF.shape[0]:
-            raise ValueError(f"Whitened Data has wrong dimensions: {X_whitened.shape}")
-        return X_whitened
+        if self.whitened_data.shape[0] != self.SF.shape[0]:
+            raise ValueError(f"Whitened Data has wrong dimensions: {self.whitened_data.shape}")
+        return self.whitened_data
 
     def __shuffle_decomp(self) -> float:
         """
@@ -303,14 +336,29 @@ class SPACO:
         largest_eigenvalue : float
             The largest eigenvalue of the shuffled matrix.
         """
-
+        # This is done to break any structure in the data to represent randomness
+        # We shuffle the rows of the input matrix X
         X_shuffled = self.A[np.random.permutation(self.A.shape[0]), :]
-        L = (1 / X_shuffled.shape[0]) * np.eye(X_shuffled.shape[0]) + (
+        
+        # The graph Laplacian is more accurately a kernel constructed by using the spatial information in the 
+        # neighbor matrix. The graph Laplacian is a symmetric matrix.
+        # We first create a matrix of ones
+        L: np.ndarray = (1 / X_shuffled.shape[0]) * np.eye(X_shuffled.shape[0]) + (
             1 / np.abs(X_shuffled).sum()
         ) * X_shuffled
-        whitened_data = self.__pca_whitening()
-        M = whitened_data.T @ L @ whitened_data
-        return eigs(M, k=1, which="LR")[0]
+        
+        # Compute the matrix M which is the product of the whitened data and the graph Laplacian
+        # M is a symmetric matrix
+        M = self.whitened_data.T @ L @ self.whitened_data
+        
+        # Compute the largest eigenvalue of M
+        
+        # eigs returns the eigenvalues and eigenvectors of M
+        # We only need the largest eigenvalue so we set k=1
+        # The eigenvectors are not needed so we set which="LR"
+        largest_eigenvalue = eigs(M, k=1, which="LR", maxiter=1000, tol=1e-4)[0][0].real
+
+        return largest_eigenvalue
 
     def __CI_SE(self, results_all: list[float]) -> Tuple[float, float]:
         """
@@ -366,54 +414,81 @@ class SPACO:
         results_all : list[float]
             A list of the results of each replication.
         """
-        results_all: list[float] = [
-            self.__shuffle_decomp() for _ in range(n_iterations)
-        ]
-
+        with ThreadPoolExecutor() as executor:
+            results_all = list(executor.map(lambda _: self.__shuffle_decomp(), range(n_iterations)))
         return results_all
 
     def __resample_lambda_cut(
         self,
-        lambdas: np.ndarray,
         batch_size: int = 10,
         n_iterations: int = 100,
         n_simulations: int = 1000,
     ) -> float:
+        
+        """
+        Resamples the shuffled adjacency matrix to calculate the confidence interval for the relevant number of SpaCs.
+        Generating a confidence interval from the shuffled M matrix eigenvalues representing random noise. The 
+        CI is then used to determine the relevant number of SpaCs.
+        The method iteratively decreases the confidence interval until the number of eigenvalues within the
+        confidence interval is 1 or the number of iterations exceeds n_simulations.
+
+        Parameters
+        ----------
+        batch_size : int, optional (default=10)
+            The number of times to replicate the __shuffle_decomp method in each iteration.
+        n_iterations : int, optional (default=100)
+            The number of times to replicate the __shuffle_decomp method.
+        n_simulations : int, optional (default=1000)
+            The maximum number of iterations to perform.
+
+        Returns
+        -------
+        rel_spacs_idx : int
+            The relevant number of SpaCs.
+        """
         # shuffle / permute the neighbor matrix
         results_all: list = self.replicate(n_iterations)
-
+        results_all: np.array = np.array(results_all)
         # calculate the 95 CI and SE
         ci_lower, ci_upper = self.__CI_SE(results_all)
 
-        lambdas_inCI: np.ndarray = lambdas[
-            (lambdas >= ci_lower) & (lambdas <= ci_upper)
+        # Select the eigenvalues from results_all that are within the 95% CI
+        # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
+        lambdas_inCI: np.ndarray = results_all[
+            (results_all >= ci_lower) & (results_all <= ci_upper)
         ]
 
         iterations: int = 0
         # iteratively decreasing the CI interval until the lambdas_inCI is 1
         # or the number of iterations is greater than n_simulations
+        print('Initializing resampling method to compute the number of relevant spatial components.....')
+
         while len(lambdas_inCI) > 1:
             iterations += 1
-
+            # Adding the batch size to the number of iterations to steadily decrease the CI margins
             batch_results = self.replicate(batch_size)
-            results_all.extend(batch_results)
+            
+            # Calculate the 95% CI and SE for the new batch of results
+            np.append(results_all, batch_results)
             ci_lower, ci_upper = self.__CI_SE(results_all)
-            lambdas_inCI = lambdas[(lambdas >= ci_lower) & (lambdas <= ci_upper)]
+
+            # checking to see how many lambdas are in the CI
+            lambdas_inCI = results_all[(results_all >= ci_lower) & (results_all <= ci_upper)]
 
             if len(lambdas_inCI) < 2:
-                break
+                # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
+                self.lambda_cut = lambdas_inCI[0]
+                print(f'number of iterations: {iterations}.\n')
+                return self.lambda_cut
 
             if iterations >= n_simulations:
                 print(
-                    f"Reached maximum number of iterations: {n_simulations}. Stopping early."
+                    f"Reached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
                 )
-                return np.mean(lambdas_inCI)
-
-        mean_result = np.mean(results_all)
-        rel_spacs_idx = len(lambdas[lambdas >= mean_result])
-
-        return rel_spacs_idx
-
+                # if ther are still more than 1 eigenvalue in the CI, we take the upper bound of the CI
+                self.lambda_cut = ci_upper
+                return self.lambda_cut
+  
     def __spectral_filtering(
         self,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -437,22 +512,22 @@ class SPACO:
             The computed graph Laplacian.
         """
         # Declaring variables
-        whitened_data: np.ndarray = self.__pca_whitening()
+
         neighbor_matrix: np.ndarray = self.A
         eigvals: np.ndarray
         eigvecs: np.ndarray
 
         # Calculating Graph Laplacian and M matrix
         n: int = neighbor_matrix.shape[0]
-        L: np.ndarray = (1 / n) * np.eye(n) + (
-            1 / np.abs(neighbor_matrix).sum()
-        ) * neighbor_matrix
-
+        self.graphLaplacian: np.ndarray = (1 / n) * np.eye(n) + (
+                    1 / np.abs(neighbor_matrix).sum()
+                ) * neighbor_matrix
+        
         # condition to determine if the graph laplacian was calculated correctly
-        if neighbor_matrix.shape != L.shape:
+        if neighbor_matrix.shape != self.graphLaplacian.shape:
             raise ValueError("Graph Laplacian has incorrect shape")
 
-        M: np.ndarray = whitened_data.T @ L @ whitened_data
+        M: np.ndarray = self.whitened_data.T @ self.graphLaplacian @ self.whitened_data
 
         # Check to see if M has the correct dimensions
         if M.shape[0] != M.shape[1]:
@@ -464,14 +539,25 @@ class SPACO:
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
 
         # Simple heuristic method for lambda cut (for now just median...later resampling)
-        if self.lambda_cut is None:
-            self.lambda_cut: float = np.median(eigvals)
-
+        if self.compute_nSpacs is False:
+            self.lambda_cut: int = np.median(eigvals)
+            print(
+                f"Using median eigenvalue as lambda cut: {self.lambda_cut}.\n")
+        else: 
+            self.lambda_cut: int = self.__resample_lambda_cut(
+                batch_size=10,
+                n_iterations=100,
+                n_simulations=1000,
+            )
+        print(
+            f"Using resampling method to compute the lambda cut: {self.lambda_cut}.\n"
+        )
+        # Filter the eigenvalues and eigenvectors based on the lambda cut
         k: int = len(eigvals[eigvals >= self.lambda_cut])  # index where lambda cut is
-        sampled_sorted_eigvecs: np.ndarray = eigvecs[:, :k]
-        sampled_sorted_eigvals: np.ndarray = eigvals[:k]
+        self.sampled_sorted_eigvecs: np.ndarray = eigvecs[:, :k]
+        self.sampled_sorted_eigvals: np.ndarray = eigvals[:k]
 
-        return (sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L)
+        return (self.sampled_sorted_eigvecs, self.sampled_sorted_eigvals, self.graphLaplacian)
 
     def spaco_projection(self) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -487,24 +573,14 @@ class SPACO:
             The projected sample features in the SPACO space.
         """
         # Declaring variables
-        U: np.ndarray
-        Vk: np.ndarray
-        Pspac: np.ndarray
-        sample_feature_matrix: np.ndarray
-
-        sample_feature_matrix = self.SF
-
-        # getting the sorted and reduced most relevant eigenvalues and eigen vectors from spectral filtering
-        sampled_sorted_eigvecs, sampled_sorted_eigvals, whitened_data, L = (
-            self.__spectral_filtering()
-        )
-
+        sample_feature_matrix: np.ndarray = self.SF
+        
         # Generating orthonormal matrix in SPACO space
-        U = sampled_sorted_eigvecs / np.sqrt(sampled_sorted_eigvals)
+        U: np.ndarray = self.sampled_sorted_eigvecs / np.sqrt(self.sampled_sorted_eigvals)
         # print(f'First few vecs of view: {U[:, :5]}')
-        Vk = whitened_data @ U
-        Pspac = Vk @ Vk.T @ L @ sample_feature_matrix
-        return Pspac, Vk, L
+        self.Vk: np.ndarray = self.whitened_data @ U
+        self.Pspac: np.ndarray = self.Vk @ self.Vk.T @ self.graphLaplacian @ sample_feature_matrix
+        return self.Pspac, self.Vk
 
     def __sigma_eigenvalues(self) -> np.ndarray:
         """
@@ -520,30 +596,52 @@ class SPACO:
         sigma: np.ndarray
             The eigenvalues of the transformed matrix.
         """
-        # Declaring variables
-        Vk: np.ndarray
-        L: np.ndarray
-        _, Vk, L = self.spaco_projection()
+
 
         # Compute the number of SPACO components
-        nSpacs: int = Vk.shape[1]
+        
         # Compute the matrix Sk by taking the first nSpacs - 1 columns of the projection matrix Pspac
-        projection: np.ndarray = self.__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
+        projection: np.ndarray = self.__orthogonalize(X=self.Vk, A=self.graphLaplacian, nSpacs=self.Vk.shape[1])
         Sk: np.ndarray = projection[
-            :, :nSpacs
+            :, :self.Vk.shape[1]
         ]  # in the R code, it is S = projection[, 1:nSpacs]
 
         # Compute the transformed matrix L @ Sk @ Sk.T @ L
-        sigma: np.ndarray = L @ Sk @ Sk.T @ L  # --L @ Sk @ Sk.T @ L
+        sigma: np.ndarray = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # Sk.T @ self.graphLaplacian @ self.graphLaplacian @ Sk
 
         # Compute the eigenvalues of the sigma matrix
         sigma_eigh: np.ndarray = np.linalg.eigvalsh(sigma)
 
-        return sigma_eigh, L, sigma, nSpacs
+        return sigma_eigh, sigma
 
     def __psum_chisq(
         self, q, eig_vals, epsabs=float(10 ^ (-6)), epsrel=float(10 ^ (-6)), limit=10000
     ):
+        """
+        Compute the p-value for a chi-squared distribution using Imhof's method.
+
+        This method computes the p-value for a given chi-squared test statistic `q`
+        based on the eigenvalues `eig_vals` using Imhof's method, which is a numerical
+        approach to calculate distribution functions of quadratic forms in normal variables.
+
+        Parameters
+        ----------
+        q : float
+            The chi-squared test statistic value.
+        eig_vals : list[float]
+            The eigenvalues of the matrix for which the p-value is being computed.
+        epsabs : float, optional
+            Absolute error tolerance for the numerical integration (default is 1e-6).
+        epsrel : float, optional
+            Relative error tolerance for the numerical integration (default is 1e-6).
+        limit : int, optional
+            The maximum number of function evaluations allowed during numerical integration (default is 10000).
+
+        Returns
+        -------
+        float
+            The computed p-value for the chi-squared distribution.
+        """
         # matching data types to contstructor definition in C++ file
         h: np.ndarray = np.repeat(1.0, len(eig_vals))
         h: list[float] = h.tolist()
@@ -568,30 +666,26 @@ class SPACO:
         sigma: np.ndarray
             The eigenvalues of the transformed matrix.
         """
-        # Declaring variables
-        L: np.ndarray
-        sigma_eigh: np.ndarray
-        sigma: np.ndarray
-        nSpacs: int
 
         # Scaling input vector (should this just be centered and not scaled? )
         gene: np.ndarray = (x - x.mean()) / x.std()
+        assert np.isclose(gene.mean(), 0, atol=1e-8) and np.isclose(gene.std(), 1, atol=1e-8), "Gene is not centered and scaled"
 
         # Compute the eigenvalues of the transformed matrix and the graph Laplacian (L)
-        sigma_eigh, L, sigma, nSpacs = self.__sigma_eigenvalues()
-
-        sorted_sigma_eigh = sigma_eigh[::-1]
+        sorted_sigma_eigh = self.sigma_eigh[::-1]
+        # printing all the variables berfore the test statistic
+        
         # Normalize the scaled data
-        gene = gene / np.repeat(np.sqrt(gene.T @ L @ gene), len(gene))
-
+        gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
+        print(f'sigma: {self.sigma.shape}\ngene: {gene.shape}')
         # Compute the test statistic
-        test_statistic: float = float(gene.T @ sigma @ gene)
+        test_statistic: float = float(gene.T @ self.sigma @ gene)
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
         pVal: float = self.__psum_chisq(
-            q=test_statistic, eig_vals=sorted_sigma_eigh[:nSpacs]
+            q=test_statistic, eig_vals=sorted_sigma_eigh[:self.Vk.shape[1]]
         )
-
+        print(f'pval: {pVal}\ntest statistic: {test_statistic}\nlambda cut: {self.lambda_cut}')
         return pVal, test_statistic
 
 
