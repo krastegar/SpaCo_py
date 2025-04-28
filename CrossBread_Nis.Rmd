@@ -1,0 +1,78 @@
+---
+title: "CrossSpecies_analysis"
+author: "Kiarash Rastegar"
+date: "2025-04-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries 
+```{r, echo=FALSE}
+library(Seurat)
+library(SPACO)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+```
+
+## Read in Data
+```{r}
+macro_seu <- readRDS("~/data_dir/Nils_data/macro_seu_before_UMAP/macro_seu.rds")
+macro_seu_counts_dgCmatrix <- readRDS("~/data_dir/Nils_data/macro_seu_before_UMAP/macro_seu_counts_dgCmatrix.rds")
+```
+
+
+# Construct the Neighbor graph via KNN + symmetrizing 
+```{r}
+# loading in the KNN graph
+knn_graph <- macro_seu@graphs$RNA_snn
+
+# create a binary adjacency graph
+adj_matrix <- (knn_graph > 0)
+adj_sym <- (adj_matrix + t(adj_matrix))/2
+
+# checks to see if the KNN has been generated correctly
+
+# Dimension checks (passed)
+dim(adj_sym) == c(length(colnames(macro_seu)), length(colnames(macro_seu)))
+
+# Checking to see which points have how many neighbors (passed)
+all(adj_sym == t(adj_sym))
+
+# checking to see how many neighbors each cell has to each other 
+table(Matrix::rowSums(adj_matrix))  
+```
+
+## playing around with adjacency matrix
+```{r}
+library(igraph)
+g <- graph_from_adjacency_matrix(adj_matrix, mode = "undirected")
+
+```
+
+## plots of adjacency matrix
+```{r}
+plot(g, vertex.size = 3, vertex.label = NA)
+```
+## saving coordinates from adjancey matrix plots
+```{r}
+# getting the coordinates for SPACO object 
+layout_coords <- layout_with_fr(g)
+coords_df <- data_frame(
+  x = layout_coords[,1],
+  y = layout_coords[,2]
+)
+head(coords_df)
+
+```
+
+## Constructing SPACO object 
+
+```{r}
+sample_feature <- macro_seu@assays$RNA$counts
+neighbor_matrix <- (adj_sym > 0)
+ # check to see if neighbor matrix is binary 
+```

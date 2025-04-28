@@ -1,4 +1,4 @@
-FROM satijalab/seurat:5.0.0
+FROM rocker/rstudio:4.4
 
 # Set environment variables 
 # non interactive mode is for dealing with arguements that require response 
@@ -6,7 +6,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies for RStudio Server
 RUN apt-get update && apt-get install -y \
-    gdebi-core \
     psmisc \
     libcurl4-openssl-dev \
     libssl-dev \
@@ -23,26 +22,28 @@ RUN apt-get update && apt-get install -y \
     libfontconfig1-dev \
     libpng-dev \
     libfribidi-dev \
+    libglpk40 \
     git \
     wget \
-    sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Download and install RStudio Server
-RUN wget https://download2.rstudio.org/server/focal/amd64/rstudio-server-2024.12.0-467-amd64.deb && \
-    gdebi -n rstudio-server-2024.12.0-467-amd64.deb && \
-    rm rstudio-server-2024.12.0-467-amd64.deb
 
 # Install R packages
 
 # Install devtools package in R
-RUN R -e "install.packages('devtools')"
+RUN R -e "install.packages('remotes')"
 
-# Installing IMSBCompBio/SpaCo package from github
-RUN R -e "devtools::install_github('IMSBCompBio/SpaCo')"
+# Installing Necessary R packages
+RUN R -e "library(remotes); remotes::install_version('ggplot2', version='3.5.2')"
+RUN R -e "library(remotes); remotes::install_version('Seurat', version='5.2.1')"
+RUN R -e "library(remotes); remotes::install_version('Matrix', version='1.7.3')"
+RUN R -e "library(remotes); remotes::install_github('IMSBCompBio/SpaCo')"
 
-RUN R -e "devtools::install_github('satijalab/seurat-data')"
+# Home Directory
+WORKDIR /home/rstudio
+
+# load data 
+COPY R_scripts/brain_seuratobject_raw.RData /home/rstudio/
 
 # Expose RStudio Server port
 EXPOSE 8787
@@ -51,13 +52,5 @@ EXPOSE 8787
 ENV USERNAME=rstudio
 ENV PASSWORD=seurat
 
-# Create default user
-RUN useradd -m -d /home/$USERNAME -s /bin/bash $USERNAME && \
-    echo "$USERNAME:$PASSWORD" | chpasswd && \
-    adduser $USERNAME sudo
-
-# Set up volume mounting
-VOLUME ["/workspace"]
-
 # Keep the container running
-CMD ["/usr/lib/rstudio-server/bin/rserver", "--server-daemonize=0"]
+CMD ["/init"]

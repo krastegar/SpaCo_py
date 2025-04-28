@@ -2,9 +2,8 @@
   "files.watcherExclude": {
     "**/.venv": true
   },
-  "python.pythonPath": "./.venv/bin/python",
+  "python.pythonPath": "/home/krastegar0/SpaCo_py/.venv/bin/activate",
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "terminal.integrated.shellArgs.linux": ["-c", "source ./.venv/bin/activate; bash"],
   "terminal.integrated.env.linux": { "VIRTUAL_ENV": "${workspaceFolder}/.venv" },
   "python.terminal.activateEnvironment": true,
   "python.testing.unittestArgs": [
@@ -20,4 +19,3 @@
     "new": "cpp"
   }
 }
- 
