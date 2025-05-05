@@ -135,15 +135,11 @@ class TestSPACO(unittest.TestCase):
         # is actually working
         sf_df = pd.DataFrame(self.sample_features)
 
-        with self.assertRaises(ValueError) as context:
-            SPACO(sf_df, self.neighbormatrix)._SPACO__preprocess(sf_df)
+        # checking to see if the change in data type from numpy array to pandas dataframe
+        # does not cause an error
+        SPACO(sf_df, self.neighbormatrix)._SPACO__preprocess(sf_df)
 
-        self.assertIn(
-            "Input must be a numpy array (np.ndarray).",
-            str(context.exception),
-            msg="Did not catch the correct exception for invalid data type",
-        )
-
+        # checking to see if the output is a numpy array
         self.assertTrue(isinstance(x_centered_scaled, np.ndarray))
 
         # Checking to see if the output is a non-zero filled numpy array
@@ -207,15 +203,17 @@ class TestSPACO(unittest.TestCase):
         # running it once by itself to see if it works
         print("Standalone attempt at running shuffle_decomp")
         self.spaco._SPACO__shuffle_decomp()
-        
-        # running it in a for loop to see if its just the shuffle portion that is breaking it 
+
+        # running it in a for loop to see if its just the shuffle portion that is breaking it
         for i in range(1, 1000):
-            print(f"Attempting to run shuffle_decomp {i} times")
+            # print(f"Attempting to run shuffle_decomp {i} times")
             try:
                 largest_eigval = self.spaco._SPACO__shuffle_decomp()
                 print(f"largest_eigval: {largest_eigval}")
             except Exception as e:
-                print(f"error: most likely a non-convergence error, not numerically stable\n\n")
+                print(
+                    "error: most likely a non-convergence error, not numerically stable\n\n"
+                )
                 print(f"error message: {e}")
                 self.fail(f"shuffle_decomp failed after {i} iterations")
         else:
@@ -226,7 +224,7 @@ class TestSPACO(unittest.TestCase):
         print("Testing the __resample_lambda_cut method")
         # same plan of attack as above
         # running it once by itself to see if it works
-        stand_alone=self.spaco._SPACO__resample_lambda_cut()
+        self.spaco._SPACO__resample_lambda_cut()
         return
 
     def test_spectral_filtering(self):
@@ -249,9 +247,7 @@ class TestSPACO(unittest.TestCase):
         ]
 
         # checking individual elements of the tuple
-        sampled_sorted_eigvecs, sampled_sorted_eigvals, _= (
-            filter_results
-        )
+        sampled_sorted_eigvecs, sampled_sorted_eigvals, _ = filter_results
 
         # Checking dimensions and making sure the k_cut function works
         self.assertNotEqual(
@@ -277,7 +273,9 @@ class TestSPACO(unittest.TestCase):
         # checking to see if the function just works without any errors
         _, Vk = self.spaco.spaco_projection()
 
-        k: int = len(self.spaco.sampled_sorted_eigvals)  # the dimemsionally reduced data
+        k: int = len(
+            self.spaco.sampled_sorted_eigvals
+        )  # the dimemsionally reduced data
 
         # checking to see if the whitened data contains negative entries
         # the both eigvecs and whitened data are allowed to have negative entries
@@ -287,10 +285,15 @@ class TestSPACO(unittest.TestCase):
         self.assertEqual(Vk.shape, (n, k))
 
         # Make sure that L matrix is the correct shape
-        self.assertEqual(self.spaco.graphLaplacian.shape, (self.spaco.whitened_data.shape[0], self.spaco.whitened_data.shape[0]))
+        self.assertEqual(
+            self.spaco.graphLaplacian.shape,
+            (self.spaco.whitened_data.shape[0], self.spaco.whitened_data.shape[0]),
+        )
 
         # make sure that the U matrix that makes up Vk is orthonormal
-        U = self.spaco.sampled_sorted_eigvecs / np.sqrt(self.spaco.sampled_sorted_eigvals)
+        U = self.spaco.sampled_sorted_eigvecs / np.sqrt(
+            self.spaco.sampled_sorted_eigvals
+        )
 
         # U is orthonormal
         np.allclose(np.eye(U.shape[0]), U @ U.T, atol=1e-2)
@@ -308,7 +311,9 @@ class TestSPACO(unittest.TestCase):
         )
         # checking the symmetry of graph laplacian
         if np.allclose(self.neighbormatrix, self.neighbormatrix.T, atol=1e-2):
-            np.allclose(self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2)
+            np.allclose(
+                self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2
+            )
 
     def test_orthogonalize(self):
         print("Testing the __orthogonalize method")
@@ -333,7 +338,7 @@ class TestSPACO(unittest.TestCase):
             # want to make sure that t is between 0 and 2
             self.assertTrue(t >= 0 and t <= 2, msg="t is not between 0 and 2")
 
-            #print(f"pval: {pval}, spatial relevance score: {t}")
+            # print(f"pval: {pval}, spatial relevance score: {t}")
 
     def tearDown(self):
         del self.spaco
@@ -343,4 +348,4 @@ class TestSPACO(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-    #unittest.main(defaultTest="TestSPACO.test_spaco_test")
+    # unittest.main(defaultTest="TestSPACO.test_spaco_test")
