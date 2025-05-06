@@ -266,23 +266,20 @@ class SPACO:
             The largest eigenvalue of the shuffled matrix.
         """
 
-        # The graph Laplacian is more accurately a kernel constructed by using the spatial information in the
-        # neighbor matrix. The graph Laplacian is a symmetric matrix.
-        # We first create a matrix of ones
-        L: np.ndarray = (1 / self.A.shape[0]) * np.eye(self.A.shape[0]) + (
-            1 / np.abs(self.A).sum()
-        ) * self.A
+        # Shuffle rows using indices for efficiency
+        indices = np.random.permutation(self.whitened_data.shape[0])
+        shuffle_reduced_data = self.whitened_data[indices, :]
 
         # Compute the matrix M which is the product of the whitened data and the graph Laplacian
         # M is a symmetric matrix
-        M = self.whitened_data.T @ L @ self.whitened_data
+        M = shuffle_reduced_data.T @ self.graphLaplacian @ shuffle_reduced_data
 
         # Compute the largest eigenvalue of M
 
         # eigs returns the eigenvalues and eigenvectors of M
         # We only need the largest eigenvalue so we set k=1
         # The eigenvectors are not needed so we set which="LR"
-        largest_eigenvalue = eigs(M, k=1, which="LR", maxiter=1000, tol=1e-4)[0][0].real
+        largest_eigenvalue = eigs(M, k=1, which="LR", tol=1e-4)[0][0].real
 
         return largest_eigenvalue
 
