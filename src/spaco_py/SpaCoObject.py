@@ -89,6 +89,7 @@ class SPACO:
         self.c: float = c
         self.lambda_cut = None
         self.nSpacs = None
+        self.graphLaplacian = None
         # Cache for computed attributes
         self._cache = {}
 
@@ -264,16 +265,13 @@ class SPACO:
         largest_eigenvalue : float
             The largest eigenvalue of the shuffled matrix.
         """
-        # This is done to break any structure in the data to represent randomness
-        # We shuffle the rows of the input matrix X
-        X_shuffled = self.A[np.random.permutation(self.A.shape[0]), :]
 
         # The graph Laplacian is more accurately a kernel constructed by using the spatial information in the
         # neighbor matrix. The graph Laplacian is a symmetric matrix.
         # We first create a matrix of ones
-        L: np.ndarray = (1 / X_shuffled.shape[0]) * np.eye(X_shuffled.shape[0]) + (
-            1 / np.abs(X_shuffled).sum()
-        ) * X_shuffled
+        L: np.ndarray = (1 / self.A.shape[0]) * np.eye(self.A.shape[0]) + (
+            1 / np.abs(self.A).sum()
+        ) * self.A
 
         # Compute the matrix M which is the product of the whitened data and the graph Laplacian
         # M is a symmetric matrix
@@ -340,29 +338,76 @@ class SPACO:
 
     @lru_cache(maxsize=None)
     def __resample_lambda_cut(
-        self, batch_size=10, n_iterations=100, n_simulations=1000
+        self,
+        batch_size: int = 10,
+        n_iterations: int = 100,
+        n_simulations: int = 1000,
     ) -> float:
         """
-        Resample the shuffled adjacency matrix to calculate the confidence interval for lambda_cut.
+        Resamples the shuffled adjacency matrix to calculate the confidence interval for the relevant number of SpaCs.
+        Generating a confidence interval from the shuffled M matrix eigenvalues representing random noise. The
+        CI is then used to determine the relevant number of SpaCs.
+        The method iteratively decreases the confidence interval until the number of eigenvalues within the
+        confidence interval is 1 or the number of iterations exceeds n_simulations.
+
+        Parameters
+        ----------
+        batch_size : int, optional (default=10)
+            The number of times to replicate the __shuffle_decomp method in each iteration.
+        n_iterations : int, optional (default=100)
+            The number of times to replicate the __shuffle_decomp method.
+        n_simulations : int, optional (default=1000)
+            The maximum number of iterations to perform.
+
+        Returns
+        -------
+        rel_spacs_idx : int
+            The relevant number of SpaCs.
         """
-        results_all = self.replicate(n_iterations)
+        # shuffle / permute the neighbor matrix
+        results_all: list = self.replicate(n_iterations)
+        results_all: np.array = np.array(results_all)
+        # calculate the 95 CI and SE
         ci_lower, ci_upper = self.__CI_SE(results_all)
-        lambdas_inCI = results_all[
+
+        # Select the eigenvalues from results_all that are within the 95% CI
+        # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
+        lambdas_inCI: np.ndarray = results_all[
             (results_all >= ci_lower) & (results_all <= ci_upper)
         ]
-        iterations = 0
-        while len(lambdas_inCI) > 1 and iterations < n_simulations:
+
+        iterations: int = 0
+        # iteratively decreasing the CI interval until the lambdas_inCI is 1
+        # or the number of iterations is greater than n_simulations
+        print(
+            "Initializing resampling method to compute the number of relevant spatial components....."
+        )
+
+        while len(lambdas_inCI) > 1:
             iterations += 1
+            # Adding the batch size to the number of iterations to steadily decrease the CI margins
             batch_results = self.replicate(batch_size)
+
+            # Calculate the 95% CI and SE for the new batch of results
             results_all = np.append(results_all, batch_results)
             ci_lower, ci_upper = self.__CI_SE(results_all)
+
+            # checking to see how many lambdas are in the CI
             lambdas_inCI = results_all[
                 (results_all >= ci_lower) & (results_all <= ci_upper)
             ]
-            if len(lambdas_inCI) == 1:
+
+            if len(lambdas_inCI) < 2:
+                # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
                 self.lambda_cut = lambdas_inCI[0]
+                print(f"number of iterations: {iterations}.\n")
                 return self.lambda_cut
-            else:
+
+            if iterations >= n_simulations:
+                print(
+                    f"Reached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
+                )
+                # if ther are still more than 1 eigenvalue in the CI, we take the upper bound of the CI
                 self.lambda_cut = ci_upper
                 return self.lambda_cut
 
@@ -373,8 +418,8 @@ class SPACO:
         Perform spectral filtering on the whitened data using the graph Laplacian.
         """
         n = self.A.shape[0]
-        graphLaplacian = (1 / n) * np.eye(n) + (1 / np.abs(self.A).sum()) * self.A
-        M = self.whitened_data.T @ graphLaplacian @ self.whitened_data
+        self.graphLaplacian = (1 / n) * np.eye(n) + (1 / np.abs(self.A).sum()) * self.A
+        M = self.whitened_data.T @ self.graphLaplacian @ self.whitened_data
         eigvals, eigvecs = eigh(M)
         idx = np.argsort(eigvals)[::-1]
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
@@ -385,7 +430,7 @@ class SPACO:
         k = len(eigvals[eigvals >= lambda_cut])
         sampled_sorted_eigvecs = eigvecs[:, :k]
         sampled_sorted_eigvals = eigvals[:k]
-        return sampled_sorted_eigvecs, sampled_sorted_eigvals, graphLaplacian
+        return sampled_sorted_eigvecs, sampled_sorted_eigvals, self.graphLaplacian
 
     def spaco_projection(self) -> Tuple[np.ndarray, np.ndarray]:
         """

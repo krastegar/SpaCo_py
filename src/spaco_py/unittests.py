@@ -206,7 +206,7 @@ class TestSPACO(unittest.TestCase):
 
         # running it in a for loop to see if its just the shuffle portion that is breaking it
         for i in range(1, 1000):
-            # print(f"Attempting to run shuffle_decomp {i} times")
+            print(f"Attempting to run shuffle_decomp {i} times")
             try:
                 largest_eigval = self.spaco._SPACO__shuffle_decomp()
                 print(f"largest_eigval: {largest_eigval}")
@@ -347,5 +347,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(defaultTest="TestSPACO.test_spectral_filtering")
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")
