@@ -377,7 +377,7 @@ class SPACO:
         # iteratively decreasing the CI interval until the lambdas_inCI is 1
         # or the number of iterations is greater than n_simulations
         print(
-            "Initializing resampling method to compute the number of relevant spatial components....."
+            f"INITIAL # of elements in CI: {len(lambdas_inCI)}\n size of CI: {ci_upper - ci_lower}"
         )
 
         while len(lambdas_inCI) > 1:
@@ -393,7 +393,9 @@ class SPACO:
             lambdas_inCI = results_all[
                 (results_all >= ci_lower) & (results_all <= ci_upper)
             ]
-
+            print(
+                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {ci_upper - ci_lower}"
+            )
             if len(lambdas_inCI) < 2:
                 # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
                 self.lambda_cut = lambdas_inCI[0]
