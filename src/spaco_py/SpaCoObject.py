@@ -338,7 +338,7 @@ class SPACO:
         self,
         batch_size: int = 10,
         n_iterations: int = 100,
-        n_simulations: int = 1000,
+        n_simulations: int = 10,  # checking with a lower number of iterations
     ) -> float:
         """
         Resamples the shuffled adjacency matrix to calculate the confidence interval for the relevant number of SpaCs.
