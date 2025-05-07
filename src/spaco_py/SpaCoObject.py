@@ -89,8 +89,7 @@ class SPACO:
         self.c: float = c
         self.lambda_cut = None
         self.nSpacs = None
-        self.graphLaplacian = None
-        # Cache for computed attributes
+        self.graphLaplacian = None  # Cache for computed attributes
         self._cache = {}
 
     def __getattr__(self, name):
@@ -323,22 +322,23 @@ class SPACO:
 
         return ci_lower, ci_upper
 
-    def replicate(self, n_iterations: int) -> np.ndarray:
+    def replicate(self, n_replicates: int) -> np.ndarray:
         """
         Replicate the __shuffle_decomp method n_iterations times using multithreading.
         """
         with ThreadPoolExecutor() as executor:
             results_all = list(
-                executor.map(lambda _: self.__shuffle_decomp(), range(n_iterations))
+                executor.map(lambda _: self.__shuffle_decomp(), range(n_replicates))
             )
         return np.array(results_all)
 
     @lru_cache(maxsize=None)
     def __resample_lambda_cut(
         self,
-        batch_size: int = 10,
-        n_iterations: int = 100,
-        n_simulations: int = 10,  # checking with a lower number of iterations
+        non_random_eigvals: Tuple[float],
+        batch_size: int = 50,
+        n_replicates: int = 100,
+        n_simulations: int = 1000,  # checking with a lower number of iterations
     ) -> float:
         """
         Resamples the shuffled adjacency matrix to calculate the confidence interval for the relevant number of SpaCs.
@@ -361,25 +361,37 @@ class SPACO:
         rel_spacs_idx : int
             The relevant number of SpaCs.
         """
+        # need to remake non_random_eigvals to be a numpy array for filtering
+        non_random_eigvals = np.array(non_random_eigvals)
+        print(f"non_random_eigvals: {non_random_eigvals}\n")
+
         # shuffle / permute the neighbor matrix
-        results_all: list = self.replicate(n_iterations)
-        results_all: np.array = np.array(results_all)
+        results_all: list = self.replicate(n_replicates)
+        print(f"results_all: {results_all}\n")
+        # results_all: np.array = np.array(results_all)
         # calculate the 95 CI and SE
         ci_lower, ci_upper = self.__CI_SE(results_all)
-
+        print(f"Inital CI: {ci_lower:.4g} - {ci_upper:.4g}\n")
         # Select the eigenvalues from results_all that are within the 95% CI
         # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
-        lambdas_inCI: np.ndarray = results_all[
-            (results_all >= ci_lower) & (results_all <= ci_upper)
+        lambdas_inCI = non_random_eigvals[
+            (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
         ]
 
         iterations: int = 0
         # iteratively decreasing the CI interval until the lambdas_inCI is 1
         # or the number of iterations is greater than n_simulations
+        delta: float = ci_upper - ci_lower
         print(
-            f"INITIAL # of elements in CI: {len(lambdas_inCI)}\n size of CI: {ci_upper - ci_lower}"
+            f"INITIAL # of elements in CI: {len(lambdas_inCI)}\n size of CI: {delta:.3g}"
         )
+        # if there are no lambdas in the CI, we return the upper bound of the CI
+        # this is the case when the CI is too small and the lambdas are not in the CI
+        if len(lambdas_inCI) == 0:
+            return ci_upper
 
+        # if there are more than 1 lambdas in the CI, we need to iterate
+        # until there is only 1 lambda in the CI or the number of iterations is greater than n_simulations
         while len(lambdas_inCI) > 1:
             iterations += 1
             # Adding the batch size to the number of iterations to steadily decrease the CI margins
@@ -390,15 +402,16 @@ class SPACO:
             ci_lower, ci_upper = self.__CI_SE(results_all)
 
             # checking to see how many lambdas are in the CI
-            lambdas_inCI = results_all[
-                (results_all >= ci_lower) & (results_all <= ci_upper)
+            lambdas_inCI = non_random_eigvals[
+                (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
             ]
+
             print(
-                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {ci_upper - ci_lower}"
+                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {delta:.3g}"
             )
             if len(lambdas_inCI) < 2:
                 # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
-                self.lambda_cut = lambdas_inCI[0]
+                self.lambda_cut = lambdas_inCI[::-1][0]
                 print(f"number of iterations: {iterations}.\n")
                 return self.lambda_cut
 
@@ -423,7 +436,9 @@ class SPACO:
         idx = np.argsort(eigvals)[::-1]
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
         if self.compute_nSpacs:
-            lambda_cut = self.__resample_lambda_cut()
+            lambda_cut = self.__resample_lambda_cut(
+                tuple(eigvals.tolist())
+            )  # make a hashable data structure for cacheing
         else:
             lambda_cut = np.median(eigvals)
         k = len(eigvals[eigvals >= lambda_cut])
