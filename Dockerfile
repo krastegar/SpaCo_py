@@ -38,6 +38,7 @@ RUN R -e "library(remotes); remotes::install_version('ggplot2', version='3.5.2')
 RUN R -e "library(remotes); remotes::install_version('Seurat', version='5.2.1')"
 RUN R -e "library(remotes); remotes::install_version('Matrix', version='1.7.3')"
 RUN R -e "library(remotes); remotes::install_github('IMSBCompBio/SpaCo')"
+RUN R -e "library(remotes); remotes::install_github('xzhoulab/SPARK')" 
 
 # Home Directory
 WORKDIR /home/rstudio
