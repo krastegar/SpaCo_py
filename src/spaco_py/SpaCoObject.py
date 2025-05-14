@@ -113,6 +113,10 @@ class SPACO:
             self._cache["Pspac"], self._cache["Vk"] = self.spaco_projection()
         elif name == "sigma" or name == "sigma_eigh":
             self._cache["sigma_eigh"], self._cache["sigma"] = self.__sigma_eigenvalues()
+        elif name == "non_random_eigvals":
+            return self.non_random_eigvals
+        elif name == "results_all":
+            return self.results_all
         else:
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{name}'"
@@ -363,15 +367,18 @@ class SPACO:
         """
         # need to remake non_random_eigvals to be a numpy array for filtering
         non_random_eigvals = np.array(non_random_eigvals)
-        print(f"non_random_eigvals: {non_random_eigvals}\n")
 
         # shuffle / permute the neighbor matrix
         results_all: list = self.replicate(n_replicates)
-        print(f"results_all: {results_all}\n")
-        # results_all: np.array = np.array(results_all)
+
+        # Caching the initial results of the shuffle decomposition (
+        # ie. the eigenvalues of the whitened data that have been rotated in SPACO space
+        self._cache["non_random_eigvals"] = non_random_eigvals
+
         # calculate the 95 CI and SE
         ci_lower, ci_upper = self.__CI_SE(results_all)
         print(f"Inital CI: {ci_lower:.4g} - {ci_upper:.4g}\n")
+
         # Select the eigenvalues from results_all that are within the 95% CI
         # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
         lambdas_inCI = non_random_eigvals[
@@ -388,6 +395,10 @@ class SPACO:
         # if there are no lambdas in the CI, we return the upper bound of the CI
         # this is the case when the CI is too small and the lambdas are not in the CI
         if len(lambdas_inCI) == 0:
+            # Also going to cache the initial results of the shuffle decomposition
+            # i.e)  the eigenvalues of the randomly permuted whitened data that has
+            #       then been rotated in SPACO space
+            self._cache["results_all"] = results_all
             return ci_upper
 
         # if there are more than 1 lambdas in the CI, we need to iterate
@@ -399,6 +410,11 @@ class SPACO:
 
             # Calculate the 95% CI and SE for the new batch of results
             results_all = np.append(results_all, batch_results)
+
+            # Caching the results of the shuffle decomposition
+            self._cache["results_all"] = results_all
+
+            # Calculate the 95% CI and SE for the new batch of results
             ci_lower, ci_upper = self.__CI_SE(results_all)
 
             # checking to see how many lambdas are in the CI
@@ -464,7 +480,10 @@ class SPACO:
             self.Vk, self.graphLaplacian, self.Vk.shape[1]
         )
         Sk = projection[:, : self.Vk.shape[1]]
+        # print (f"\nshape of Sk: {Sk.shape}\n")
+        # print(f"shape of graphLaplacian: {self.graphLaplacian.shape}\n")
         sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian
+        # sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # Sk.T @ L @ L @ Sk
         sigma_eigh = np.linalg.eigvalsh(sigma)
         return sigma_eigh, sigma
 

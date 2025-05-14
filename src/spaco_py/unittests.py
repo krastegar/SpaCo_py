@@ -7,72 +7,19 @@ from spaco_py.SpaCoObject import SPACO
 
 
 class TestSPACO(unittest.TestCase):
-    @staticmethod  # static method
-    def _generate_synthetic_data(
-        n_samples: int,
-        n_features: int,
-        sparsity: float = 0.1,
-        noise_level: float = 0.1,
-        lam: float = 65,  # random number I chose for the poisson distribution events
-        generate1d: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Generate synthetic single-cell RNA sequencing data.
-
-        Args:
-            n_samples: Number of samples (rows).
-            n_features: Number of features (columns).
-            sparsity (optional): Proportion of zero values in the data.
-            noise_level (optional): Standard deviation of the Gaussian noise added to the data.
-            lam (optional): Poisson distribution parameter.
-            generate1d (optional): If True, flatten the data matrix.
-
-        Returns: -> np.ndarray
-            synthetic data matrices.
-        """
-        # Generate random data matrix using poisson distribution because
-        # single-cell RNA sequencing data is count data
-        data1 = np.random.poisson(lam=lam, size=(n_samples, n_features)).astype(float)
-
-        # Introduce sparsity
-        mask1 = np.random.rand(n_samples, n_features) < sparsity
-        data1[mask1] = 0
-
-        # Add Gaussian noise
-        noise1 = np.random.normal(0, noise_level, size=(n_samples, n_features))
-        data1 += noise1
-
-        # Flatten data if generate1d is True
-        if generate1d:
-            data1 = data1.flatten()
-            return data1
-
-        return data1
-
     def setUp(self):
         """
-        Set up the test fixture.
-
-        Generates synthetic data matrices for testing. The
-        `sample_features` and `neighbormatrix` attributes are set to
-        matrices of shape `(100, 100)` with 10% sparsity and 10%
-        Gaussian noise added.
+        Using benchmark data from the SPACO paper
         """
-        self.sample_features = TestSPACO._generate_synthetic_data(
-            n_samples=80,
-            n_features=100,
-            sparsity=0.1,
-            noise_level=0.1,
-            generate1d=False,
+        self.sample_features = np.load(
+            "/home/krastegar0/SpaCo_py/src/spaco_py/sf_mat.npy"
         )
-        self.neighbormatrix = TestSPACO._generate_synthetic_data(
-            n_samples=80,
-            n_features=80,
-            sparsity=0.1,
-            noise_level=0.1,
-            generate1d=False,
+        self.neighbormatrix = np.load(
+            "/home/krastegar0/SpaCo_py/src/spaco_py/A_mat.npy"
         )
         self.spaco = SPACO(self.sample_features, self.neighbormatrix)
+
+        # variable is redundant, but I want to keep it for testing purposes
         self.centered_scaled_features = self.spaco._SPACO__preprocess(
             self.sample_features
         )
@@ -322,10 +269,14 @@ class TestSPACO(unittest.TestCase):
 
         # takes Vk as the inner product with A
         Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
+        print(f"shape of Q: {Q.shape}")
 
-        # print(f'shape of Q: {Q.shape}')
         # check to see that Q is orthogonal
-        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+        # np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+
+    def test_sigma_eigenvalues(self):
+        self.spaco._SPACO__sigma_eigenvalues()
+        # checking to see if the function just works without any errors
 
     def test_spaco_test(self):
         print("Testing the spaco_test method")
@@ -347,5 +298,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(defaultTest="TestSPACO.test_spectral_filtering")
+    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")

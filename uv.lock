@@ -978,6 +978,19 @@ wheels = [
 ]
 
 [[package]]
+name = "momentchi2"
+version = "0.1.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/92/e7/def9d879d424bc934e9e43b3455e28cd2ac76ace81cdc94be803ea78d29f/momentchi2-0.1.8.tar.gz", hash = "sha256:95d4becfd181d447c0281292c5827d74a09b04c38bd312da48a8a08932e8de1f", size = 11748 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/96/2f709aa4d4ddcfe5ae699fb4319d8613ca4e90c928c7911c366b8506777e/momentchi2-0.1.8-py3-none-any.whl", hash = "sha256:39523a545882c5eaee205496a007954f4db4dedb4e5009206c92c0a865ad3c4d", size = 11315 },
+]
+
+[[package]]
 name = "narwhals"
 version = "1.24.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1823,6 +1836,7 @@ source = { editable = "." }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
+    { name = "momentchi2" },
     { name = "narwhals" },
     { name = "numpy" },
     { name = "packaging" },
@@ -1959,6 +1973,7 @@ dev = [
 requires-dist = [
     { name = "joblib", specifier = "==1.4.2" },
     { name = "matplotlib", specifier = ">=3.10.1" },
+    { name = "momentchi2", specifier = ">=0.1.8" },
     { name = "narwhals", specifier = "==1.24.1" },
     { name = "numpy", specifier = "==2.2.2" },
     { name = "packaging", specifier = "==24.2" },
