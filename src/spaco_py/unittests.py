@@ -272,11 +272,26 @@ class TestSPACO(unittest.TestCase):
         print(f"shape of Q: {Q.shape}")
 
         # check to see that Q is orthogonal
-        # np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
 
     def test_sigma_eigenvalues(self):
-        self.spaco._SPACO__sigma_eigenvalues()
-        # checking to see if the function just works without any errors
+        # Making sure that the sigma eigenvalues are computed correctly
+        # And lie within the correct range
+        print("Testing the __sigma_eigenvalues method")
+        sigma_eigh, sigma =self.spaco._SPACO__sigma_eigenvalues()
+
+        # Eigenvalues should be between 0 and 1
+        self.assertTrue(
+            np.all(sigma_eigh >= 0) and np.all(sigma_eigh <= 1),
+            msg="Eigenvalues are not between 0 and 1",
+        )
+
+        # sigma should be a PSD matrix
+        self.assertTrue(
+            np.all(np.linalg.eigvals(sigma) >= 0),
+            msg="Sigma is not a positive semi-definite matrix",
+        )
+
 
     def test_spaco_test(self):
         print("Testing the spaco_test method")
