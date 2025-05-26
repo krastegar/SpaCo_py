@@ -265,25 +265,14 @@ class TestSPACO(unittest.TestCase):
         Vk, L = self.spaco.Vk, self.spaco.graphLaplacian
         # print(f'shape of Neighborhood: {self.neighbormatrix.shape}\n\n shape of Vk: {Vk.shape}\n\n shape of L: {L.shape}')
 
-        # takes Vk as the inner product with A
-        Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
+        # takes Vk as the inner product with graph Laplacian
+        Q = self.spaco._SPACO__orthogonalize(V=Vk, L=L)
+        identity_L = Q.T @ L @ Q
 
         # is Q orthogonal to the graph Laplacian?
         self.assertTrue(
-            np.allclose(Q.T @ L @ Q, np.zeros((Q.shape[1], Q.shape[1])), atol=1e-2),
+            np.allclose(identity_L, np.eye(identity_L.shape[0]), atol=1e-8),
             msg="Q is not orthogonal to the graph Laplacian",
-        )
-
-        # checking to see if vk is positive semi-definite
-        self.assertTrue(
-            np.all(np.linalg.eigvalsh(Vk) >= 0),
-            msg="Ortho matrix is not a positive semi-definite matrix",
-        )
-
-        # checking to see if the orthogonalization produces non-zero eigenvalues
-        self.assertTrue(
-            np.all(np.linalg.eigvalsh(Q) >= 0),
-            msg="Ortho matrix is not a positive semi-definite matrix",
         )
 
     def test_sigma_eigenvalues(self):
@@ -292,6 +281,11 @@ class TestSPACO(unittest.TestCase):
         print("Testing the __sigma_eigenvalues method")
         sigma_eigh, sigma = self.spaco._SPACO__sigma_eigenvalues()
 
+        # need to make sure that sigma is kxk matrix
+        self.assertTrue(
+            sigma.shape == (self.spaco.Vk.shape[1], self.spaco.Vk.shape[1]),
+            msg="Sigma is not a square matrix with k x k dimensions",
+        )
         # sigma should be a PSD matrix
         self.assertTrue(
             np.all(np.linalg.eigvals(sigma) >= 0),
@@ -307,6 +301,7 @@ class TestSPACO(unittest.TestCase):
     def test_spaco_test(self):
         print("Testing the spaco_test method")
         for i in range(self.spaco.Pspac.shape[1]):
+            print(f"Testing spatial relevance score for feature {i}")
             pval, t = self.spaco.spaco_test(self.spaco.Pspac[:, i])
 
             # want to make sure that pval is between 0 and 1
@@ -324,5 +319,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(defaultTest="TestSPACO.test_orthogonalize")
-    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
+    unittest.main(defaultTest="TestSPACO.test_spaco_test")
+    # unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")

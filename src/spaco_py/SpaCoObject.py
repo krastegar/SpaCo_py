@@ -174,65 +174,46 @@ class SPACO:
 
     def __orthogonalize(
         self,
-        X: np.ndarray,
-        A: np.ndarray,
-        nSpacs: int,
+        V: np.ndarray,
+        L: np.ndarray,
         tol: float = np.sqrt(np.finfo(float).eps),
     ) -> np.ndarray:
         """
-        Version of QR factorization that Achim, David and Niklaus came up with
-        for the SPACO algorithm. Want to talk to achim about replacing this whole thing
-        just with np.linalg.qr() function. This implents a gram-schmidt orthogonalization
-        of the columns of the projection matrix X and returns a Q.
+        Perform Gram-Schmidt orthogonalization under the L-inner product.
 
-        Parameters
-        ----------
-        X : np.ndarray
-            The projection matrix.
-        A : np.ndarray
-            The neighbor matrix.
-        nSpacs : int
-            The number of SpaCo components to retain.
+        Parameters:
+        - V: (n, k) metapatterns found in L-space
+        - L: (n, n) graph Laplacian
+        - tol: tolerance to skip near-null vectors under L
 
-        Returns
-        -------
-        np.ndarray
-            The orthogonalized (unitary) matrix.
+        Returns:
+        - Q: (n, r) L-orthonormal basis, where r <= k
+
+        Raises:
+        - ValueError: if all vectors are rejected (i.e., null in L-space)
         """
+        _, k = V.shape
+        Q = []
 
-        # preFactor = 1 # not sure what this is for
+        for i in range(k):
+            v = V[:, i].copy()  # make a copy to avoid modifying the original vector
+            for q in Q:
+                proj_coeff = q.T @ L @ v
+                v -= proj_coeff * q
 
-        # getting number of rows and columns of the projection matrix X
-        m: int = X.shape[0]
-        n: int = X.shape[1]
-        if m < nSpacs:
+            norm_L = np.sqrt(v.T @ L @ v)
+            if norm_L < tol:
+                continue
+
+            q = v / norm_L
+            Q.append(q)
+
+        if not Q:
             raise ValueError(
-                "The number of rows of the projection matrix must be greater than or equal to the number of columns."
+                "All vectors are null or near-null under the L-inner product. No basis vectors remain."
             )
-        Q: np.ndarray = np.zeros(
-            (m, n)
-        )  # initializing the orthogonalized (unitary) matrix
-        norms: np.ndarray = np.zeros(
-            n
-        )  # initializing the norms of the columns of the projection matrix (this is a vector)
-        for k in range(nSpacs):
-            Q[:, k] = X[
-                :, k
-            ]  # setting the k-th column of the orthogonalized matrix to the k-th column of the projection matrix
-            if k > 0:
-                for i in range(k):
-                    Q[:, k] -= (
-                        (Q[:, k] @ A @ Q[:, i]) / (Q[:, i] @ A @ Q[:, i]) * Q[:, i]
-                    )
-            scalar_product = Q[:, k] @ A @ Q[:, k]
-            if scalar_product < 0:
-                raise ValueError(
-                    f"Scalar product is negative: {scalar_product} for kth column {k}"
-                )
-            norms[k] = np.sqrt(scalar_product)
-            if abs(norms[k]) < tol:
-                raise ValueError("MATRIX [A] IS NOT FULL RANK.")
-            Q[:, k] /= norms[k]  # not sure why in R version its c(Norms[k])
+
+        Q = np.stack(Q, axis=1)
         return Q
 
     def __pca_whitening(self) -> np.ndarray:
@@ -477,16 +458,14 @@ class SPACO:
         Compute the eigenvalues of the transformed matrix.
         """
 
-        projection = self.__orthogonalize(
-            self.Vk, self.graphLaplacian, self.Vk.shape[1]
-        )
+        projection = self.__orthogonalize(V=self.Vk, L=self.graphLaplacian)
         # projection is the orthogonalized (unitary) matrix
         Sk = projection[:, : self.Vk.shape[1]]
 
         # print(f"shape of graphLaplacian: {self.graphLaplacian.shape}\n")
-        sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian
+        sigma = Sk.T @ self.graphLaplacian @ self.graphLaplacian @ Sk  # k x k matrix
 
-        # sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # Sk.T @ L @ L @ Sk
+        # sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # n x n matrix
         sigma_eigh = np.linalg.eigvalsh(sigma)
 
         return sigma_eigh, sigma
@@ -533,7 +512,8 @@ class SPACO:
         p_val = imhoff.probQsupx(
             q, eig_vals, lambda_length, h, delta, epsabs, epsrel, limit
         )
-        return p_val
+        # calculating the tail end probability
+        return 1 - p_val
 
     def spaco_test(self, x: np.ndarray) -> float:
         """
@@ -556,13 +536,18 @@ class SPACO:
         # printing all the variables berfore the test statistic
 
         # Normalize the scaled data
-        gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
+        # gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
         print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
 
         # Compute the test statistic
-        # test_statistic: float = float(gene.T @ self.sigma @ gene)
-        projection: float = self.sigma.T @ (self.graphLaplacian @ gene)
-        test_statistic: float = np.dot(projection @ projection)
+        test_statistic: float = (
+            gene.T
+            @ self.graphLaplacian
+            @ self.Vk
+            @ self.Vk.T
+            @ self.graphLaplacian
+            @ gene
+        )
 
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
