@@ -12,11 +12,9 @@ class TestSPACO(unittest.TestCase):
         Using benchmark data from the SPACO paper
         """
         self.sample_features = np.load(
-            "/home/krastegar0/SpaCo_py/src/spaco_py/sf_mat.npy"
+            "/home/krastega0/SpaCo_py/src/spaco_py/sf_mat.npy"
         )
-        self.neighbormatrix = np.load(
-            "/home/krastegar0/SpaCo_py/src/spaco_py/A_mat.npy"
-        )
+        self.neighbormatrix = np.load("/home/krastega0/SpaCo_py/src/spaco_py/A_mat.npy")
         self.spaco = SPACO(self.sample_features, self.neighbormatrix)
 
         # variable is redundant, but I want to keep it for testing purposes
@@ -269,22 +267,30 @@ class TestSPACO(unittest.TestCase):
 
         # takes Vk as the inner product with A
         Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
-        print(f"shape of Q: {Q.shape}")
 
-        # check to see that Q is orthogonal
-        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+        # is Q orthogonal to the graph Laplacian?
+        self.assertTrue(
+            np.allclose(Q.T @ L @ Q, np.zeros((Q.shape[1], Q.shape[1])), atol=1e-2),
+            msg="Q is not orthogonal to the graph Laplacian",
+        )
+
+        # checking to see if vk is positive semi-definite
+        self.assertTrue(
+            np.all(np.linalg.eigvalsh(Vk) >= 0),
+            msg="Ortho matrix is not a positive semi-definite matrix",
+        )
+
+        # checking to see if the orthogonalization produces non-zero eigenvalues
+        self.assertTrue(
+            np.all(np.linalg.eigvalsh(Q) >= 0),
+            msg="Ortho matrix is not a positive semi-definite matrix",
+        )
 
     def test_sigma_eigenvalues(self):
         # Making sure that the sigma eigenvalues are computed correctly
         # And lie within the correct range
         print("Testing the __sigma_eigenvalues method")
-        sigma_eigh, sigma =self.spaco._SPACO__sigma_eigenvalues()
-
-        # Eigenvalues should be between 0 and 1
-        self.assertTrue(
-            np.all(sigma_eigh >= 0) and np.all(sigma_eigh <= 1),
-            msg="Eigenvalues are not between 0 and 1",
-        )
+        sigma_eigh, sigma = self.spaco._SPACO__sigma_eigenvalues()
 
         # sigma should be a PSD matrix
         self.assertTrue(
@@ -292,6 +298,11 @@ class TestSPACO(unittest.TestCase):
             msg="Sigma is not a positive semi-definite matrix",
         )
 
+        # Eigenvalues should be between 0 and 1
+        self.assertTrue(
+            np.all(sigma_eigh >= 0) and np.all(sigma_eigh <= 1),
+            msg="Eigenvalues are not between 0 and 1",
+        )
 
     def test_spaco_test(self):
         print("Testing the spaco_test method")
@@ -313,5 +324,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    unittest.main(defaultTest="TestSPACO.test_orthogonalize")
     unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
-    # unittest.main(defaultTest="TestSPACO.test_spaco_test")

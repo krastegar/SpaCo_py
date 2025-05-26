@@ -476,15 +476,19 @@ class SPACO:
         """
         Compute the eigenvalues of the transformed matrix.
         """
+
         projection = self.__orthogonalize(
             self.Vk, self.graphLaplacian, self.Vk.shape[1]
         )
+        # projection is the orthogonalized (unitary) matrix
         Sk = projection[:, : self.Vk.shape[1]]
-        # print (f"\nshape of Sk: {Sk.shape}\n")
+
         # print(f"shape of graphLaplacian: {self.graphLaplacian.shape}\n")
         sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian
+
         # sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # Sk.T @ L @ L @ Sk
         sigma_eigh = np.linalg.eigvalsh(sigma)
+
         return sigma_eigh, sigma
 
     def __psum_chisq(
@@ -515,6 +519,7 @@ class SPACO:
         float
             The computed p-value for the chi-squared distribution.
         """
+
         # matching data types to contstructor definition in C++ file
         h: np.ndarray = np.repeat(1.0, len(eig_vals))
         h: list[float] = h.tolist()
@@ -553,8 +558,12 @@ class SPACO:
         # Normalize the scaled data
         gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
         print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
+
         # Compute the test statistic
-        test_statistic: float = float(gene.T @ self.sigma @ gene)
+        # test_statistic: float = float(gene.T @ self.sigma @ gene)
+        projection: float = self.sigma.T @ (self.graphLaplacian @ gene)
+        test_statistic: float = np.dot(projection @ projection)
+
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
         pVal: float = self.__psum_chisq(
