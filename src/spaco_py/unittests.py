@@ -12,9 +12,11 @@ class TestSPACO(unittest.TestCase):
         Using benchmark data from the SPACO paper
         """
         self.sample_features = np.load(
-            "/home/krastega0/SpaCo_py/src/spaco_py/sf_mat.npy"
+            "/home/krastegar0/SpaCo_py/src/spaco_py/sf_mat.npy"
         )
-        self.neighbormatrix = np.load("/home/krastega0/SpaCo_py/src/spaco_py/A_mat.npy")
+        self.neighbormatrix = np.load(
+            "/home/krastegar0/SpaCo_py/src/spaco_py/A_mat.npy"
+        )
         self.spaco = SPACO(self.sample_features, self.neighbormatrix)
 
         # variable is redundant, but I want to keep it for testing purposes
@@ -319,5 +321,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(defaultTest="TestSPACO.test_spaco_test")
-    # unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
+    # unittest.main(defaultTest="TestSPACO.test_spaco_test")
+    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
