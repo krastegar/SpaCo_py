@@ -540,14 +540,9 @@ class SPACO:
         print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
 
         # Compute the test statistic
-        test_statistic: float = (
-            gene.T
-            @ self.graphLaplacian
-            @ self.Vk
-            @ self.Vk.T
-            @ self.graphLaplacian
-            @ gene
-        )
+        # calculate the statistic in steps
+        Vk_proj_x: np.ndarray = self.Vk.T @ self.graphLaplacian @ gene
+        test_statistic: float = Vk_proj_x.T @ Vk_proj_x
 
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
