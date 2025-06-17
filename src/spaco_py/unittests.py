@@ -182,7 +182,7 @@ class TestSPACO(unittest.TestCase):
                 # first time running the replicate function
                 print(f"Replicating {replicate_number} times for the first time")
                 stack.append(len(self.spaco._SPACO__replicate(replicate_number)))
-                continue
+                continue  # go to the next iteration (skip the rest of the loop)
 
             # if the stack is not empty, we can check the previous length
             # checking to see if the previous length is not None
@@ -214,9 +214,78 @@ class TestSPACO(unittest.TestCase):
 
         # ---re-writing the logic from lambda_cut here and testing all aspects of the function to see if it works as expected---#
 
-        # generating the results_all ( a vector containing largest eigenvalues from a randomly permuted neighborhood matrix)
-        # PAUSE:make a unit test for replicate function, then come back
-        return
+        # shuffle / permute the neighbor matrix
+        n_replicates = 10
+        results_all = self.spaco._SPACO__replicate(n_replicates)
+
+        # calculate the 95 CI and SE
+        ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(results_all))
+        delta_init = ci_upper - ci_lower
+        if delta_init <= 0:
+            self.fail(
+                "Delta value is not positive, which means the confidence interval is not valid"
+            )
+        delta_stack = [delta_init]  # stack to keep track of the delta values
+        # Select the eigenvalues from results_all that are within the 95% CI
+        # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
+        lambdas_inCI = non_random_eigvals[
+            (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
+        ]
+
+        # counter for interations
+        iterations: int = 0
+        # if there are no lambdas in the CI, we return the upper bound of the CI
+        # this is the case when the CI is too small and the lambdas are not in the CI
+        if len(lambdas_inCI) == 0:
+            # Also going to cache the initial results of the shuffle decomposition
+            # i.e)  the eigenvalues of the randomly permuted whitened data that has
+            #       then been rotated in SPACO space
+            print("no lambdas in CI, returning upper bound of CI")
+
+        # increase list of results by a batch size
+        batch_size = 5
+
+        # if there are more than 1 lambdas in the CI, we need to iterate
+        # until there is only 1 lambda in the CI or the number of iterations is greater than n_simulations
+        n_simulations = 5  # maximum number of iterations
+        while len(lambdas_inCI) > 1:
+            delta_init = delta_stack[-1]  # get the last delta value
+            # increasing the counter
+            iterations += 1
+            print(f"Iteration {iterations} with delta value: {delta_init:.3g}")
+            # Adding the batch size to the number of iterations to steadily decrease the CI margins
+            batch_results = self.spaco._SPACO__replicate(batch_size)
+
+            # Calculate the 95% CI and SE for the new batch of results
+            results_all = np.append(results_all, batch_results)
+
+            # Calculate the 95% CI and SE for the new batch of results
+            ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(results_all))
+
+            # checking to see how many lambdas are in the CI
+            lambdas_inCI = non_random_eigvals[
+                (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
+            ]
+            # updated delta value should be smaller than the previous delta value
+            delta = ci_upper - ci_lower
+            self.assertLess(
+                delta, delta_init, msg="Delta value did not decrease after iteration"
+            )
+            delta_stack.append(delta)  # append the new delta value to the stack
+            print(
+                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {delta:.3g}"
+            )
+            if len(lambdas_inCI) < 2:
+                # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
+                self.lambda_cut = (
+                    lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
+                )
+                print(f"number of iterations: {iterations}.\n")
+
+            if iterations >= n_simulations:
+                print(
+                    f"Reached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
+                )
 
     def test_spectral_filtering(self):
         print("Testing the __spectral_filtering method")
@@ -373,4 +442,4 @@ class TestSPACO(unittest.TestCase):
 
 if __name__ == "__main__":
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")
-    unittest.main(defaultTest="TestSPACO.test_replicate")
+    unittest.main(defaultTest="TestSPACO.test__resample_lambda_cut")
