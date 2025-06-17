@@ -44,8 +44,8 @@
 # ============================================================================
 
 import numpy as np
-import imhoff
 import pandas as pd
+import imhoff
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigs
 from scipy.stats import t
@@ -294,7 +294,7 @@ class SPACO:
         # The eigenvectors are not needed so we set which="LR"
         largest_eigenvalue = eigs(M, k=1, which="LR", tol=1e-4)[0][0].real
 
-        return largest_eigenvalue
+        return float(largest_eigenvalue)
 
     def __CI_SE(self, results_all: list[float]) -> Tuple[float, float]:
         """
@@ -313,7 +313,7 @@ class SPACO:
             The upper bound of the 95% confidence interval.
         """
         # Calculate the mean of the results
-        mean: float = np.mean(results_all)
+        mean = np.mean(results_all)
 
         # Calculate the standard error of the mean
         # np.std calculates the standard deviation of the list
@@ -324,17 +324,17 @@ class SPACO:
         # t.ppf gives the value of the t-distribution for a given cumulative probability
         # 0.975 is used to find the two-tailed critical value for 95% confidence
         # df is degrees of freedom, which is number of observations minus one
-        t_critical: float = t.ppf(0.975, df=len(results_all) - 1)
+        t_critical = t.ppf(0.975, df=len(results_all) - 1)
 
         # Calculate the margin of error
         # This is the product of the t critical value and the standard error
-        margin_of_error: float = t_critical * std_error
+        margin_of_error = t_critical * std_error
 
         # Calculate the lower and upper bounds of the confidence interval
-        ci_lower: float = mean - margin_of_error
-        ci_upper: float = mean + margin_of_error
+        ci_lower = mean - margin_of_error
+        ci_upper = mean + margin_of_error
 
-        return ci_lower, ci_upper
+        return float(ci_lower), float(ci_upper)
 
     def replicate(self, n_replicates: int) -> np.ndarray:
         """
@@ -349,7 +349,7 @@ class SPACO:
     @lru_cache(maxsize=None)
     def __resample_lambda_cut(
         self,
-        non_random_eigvals: Tuple[float],
+        non_random_eigvals: np.ndarray,
         batch_size: int = 50,
         n_replicates: int = 100,
         n_simulations: int = 1000,  # checking with a lower number of iterations
@@ -379,14 +379,14 @@ class SPACO:
         non_random_eigvals = np.array(non_random_eigvals)
 
         # shuffle / permute the neighbor matrix
-        results_all: list = self.replicate(n_replicates)
+        results_all: np.ndarray = self.replicate(n_replicates)
 
         # Caching the initial results of the shuffle decomposition (
         # ie. the eigenvalues of the whitened data that have been rotated in SPACO space
         self._cache["non_random_eigvals"] = non_random_eigvals
 
         # calculate the 95 CI and SE
-        ci_lower, ci_upper = self.__CI_SE(results_all)
+        ci_lower, ci_upper = self.__CI_SE(list(results_all))
         print(f"Inital CI: {ci_lower:.4g} - {ci_upper:.4g}\n")
 
         # Select the eigenvalues from results_all that are within the 95% CI
@@ -426,7 +426,7 @@ class SPACO:
             self._cache["results_all"] = results_all
 
             # Calculate the 95% CI and SE for the new batch of results
-            ci_lower, ci_upper = self.__CI_SE(results_all)
+            ci_lower, ci_upper = self.__CI_SE(list(results_all))
 
             # checking to see how many lambdas are in the CI
             lambdas_inCI = non_random_eigvals[
@@ -438,7 +438,9 @@ class SPACO:
             )
             if len(lambdas_inCI) < 2:
                 # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
-                self.lambda_cut = lambdas_inCI[::-1][0]
+                self.lambda_cut = (
+                    lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
+                )
                 print(f"number of iterations: {iterations}.\n")
                 return self.lambda_cut
 
@@ -450,9 +452,16 @@ class SPACO:
                 self.lambda_cut = ci_upper
                 return self.lambda_cut
 
+        # Ensure a float is always returned
+        # If the loop exits without returning, return the current lambda_cut or ci_upper as fallback
+        if self.lambda_cut is not None:
+            return self.lambda_cut
+        else:
+            return float(ci_upper)
+
     def __spectral_filtering(
         self,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Perform spectral filtering on the whitened data using the graph Laplacian.
         """
@@ -530,13 +539,11 @@ class SPACO:
         """
 
         # matching data types to contstructor definition in C++ file
-        h: np.ndarray = np.repeat(1.0, len(eig_vals))
-        h: list[float] = h.tolist()
-        delta: np.ndarray = np.repeat(0.0, len(eig_vals))
-        delta: list[float] = delta.tolist()
-        eig_vals: list[float] = eig_vals.tolist()
-        q: float = float(q)
-        lambda_length: int = len(eig_vals)
+        h = np.repeat(1.0, len(eig_vals)).tolist()
+        delta = np.repeat(0.0, len(eig_vals)).tolist()
+        eig_vals = eig_vals.tolist()
+        q = float(q)
+        lambda_length = len(eig_vals)
 
         # Compute the p-value for the chi-squared distribution
         p_val = imhoff.probQsupx(
@@ -545,14 +552,16 @@ class SPACO:
         # calculating the tail end probability
         return 1 - p_val
 
-    def spaco_test(self, x: np.ndarray) -> float:
+    def spaco_test(self, x: np.ndarray) -> Tuple[float, float]:
         """
         Compute the spatially variable test statistic for any given input vector x.
 
         Returns
         -------
-        sigma: np.ndarray
-            The eigenvalues of the transformed matrix.
+        pVal: float
+            The p-value of the test statistic.
+        test_statistic: float
+            The computed test statistic.
         """
 
         # Scaling input vector (should this just be centered and not scaled? )
@@ -572,7 +581,7 @@ class SPACO:
         # Compute the test statistic
         # calculate the statistic in steps
         Vk_proj_x: np.ndarray = self.Vk.T @ self.graphLaplacian @ gene
-        test_statistic: float = Vk_proj_x.T @ Vk_proj_x
+        test_statistic: float = float(Vk_proj_x.T @ Vk_proj_x)
 
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
@@ -583,7 +592,3 @@ class SPACO:
             f"pval: {pVal}\ntest statistic: {test_statistic}\nlambda cut: {self.lambda_cut}"
         )
         return pVal, test_statistic
-
-
-if __name__ == "__main__":
-    None

@@ -1,6 +1,5 @@
 from spaco_py.SpaCoObject import SPACO
 import numpy as np
-import time
 
 
 class OMEN(SPACO):
@@ -25,11 +24,9 @@ class OMEN(SPACO):
 
 if __name__ == "__main__":
     # Loading .npy file
-    sf = np.load(
-        "/home/krastegar0/SpaCo_py/src/spaco_py/sf_mat.npy", allow_pickle=False
-    )
+    sf = np.load("/home/krastega0/SpaCo_py/src/spaco_py/sf_mat.npy", allow_pickle=False)
     neighbor = np.load(
-        "/home/krastegar0/SpaCo_py/src/spaco_py/A_mat.npy", allow_pickle=False
+        "/home/krastega0/SpaCo_py/src/spaco_py/A_mat.npy", allow_pickle=False
     )
 
     # calling SPACO class
@@ -37,17 +34,5 @@ if __name__ == "__main__":
     # checking the keys of the loaded files
     # print(type(sf), type(neighbor))
 
-    # value range for the replicate function
-    value_range = np.arange(100, 1010, 10)  # works the way I want
-    # print(value_range)
-
-    # index for finding the middle of the range
-    index = int(len(value_range) / 2)  # works the way I want
-    # print(value_range[index])
-
-    start_time = time.time()
-    # The line of code you want to measure
-    results_all = omen.replicate(value_range[index])
-    end_time = time.time()
-
-    print(f"Execution time: {end_time - start_time:.6f} seconds")
+    # getting the spac projections
+    Denoised_pattern, meta_patterns = omen.spaco_projection()
