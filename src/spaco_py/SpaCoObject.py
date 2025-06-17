@@ -523,19 +523,65 @@ class SPACO:
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Perform spectral filtering on the whitened data using the graph Laplacian.
+
+        This is the core of the SPACO algorithm. We take the whitened data, which is the
+        sample features after PCA whitening, and project it onto the graph Laplacian.
+
+        The graph Laplacian is a symmetric matrix that represents the graph structure of
+        the data. It is defined as the sum of the neighbor matrix and the diagonal matrix
+        of node degrees. The graph Laplacian is then normalized by the sum of the node
+        degrees.
+
+        We then compute the eigenvectors and eigenvalues of the graph Laplacian.
+        The eigenvectors are the principal components of the graph Laplacian, and the
+        eigenvalues are the corresponding eigenvalues.
+
+        The eigenvectors are sorted in descending order of their corresponding
+        eigenvalues.
+
+        If compute_nSpacs is True, we then compute the lambda cut, which is the
+        threshold for selecting the number of eigenvectors to keep. The lambda cut is
+        computed by taking the median of the eigenvalues and then resampling from the
+        distribution of eigenvalues until the lambda cut is greater than or equal to
+        the 95% CI of the resampled eigenvalues. This is done to get the largest cutoff
+        of eigenvalues that are significantly different from a random distribution.
+
+        If compute_nSpacs is False, the lambda cut is simply set to the median of the
+        eigenvalues.
+
+        The eigenvectors and eigenvalues are then filtered by the lambda cut to select
+        the top k eigenvectors and eigenvalues.
+
+        The output is a tuple of three arrays: the filtered eigenvectors, the filtered
+        eigenvalues, and the graph Laplacian.
         """
+
+        # number of samples / spots
         n = self.A.shape[0]
+
+        # Compute the graph Laplacian
+        # The graph Laplacian is a symmetric matrix that represents the graph structure of
+        # the data. It is defined as the sum of the neighbor matrix and the diagonal matrix
+        # of node degrees. The graph Laplacian is then normalized by the sum of the node
+        # degrees.
         self.graphLaplacian = (1 / n) * np.eye(n) + (1 / np.abs(self.A).sum()) * self.A
+
+        # Compute the eigenvectors and eigenvalues of the graph Laplacian
         M = self.whitened_data.T @ self.graphLaplacian @ self.whitened_data
         eigvals, eigvecs = eigh(M)
+
+        # Sort the eigenvectors in descending order of their corresponding eigenvalues
         idx = np.argsort(eigvals)[::-1]
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
         if self.compute_nSpacs:
+            # Compute the lambda cut using resampling
             self.lambda_cut = self.__resample_lambda_cut(
                 tuple(eigvals.tolist())
             )  # make a hashable data structure for cacheing
         else:
+            # Compute the lambda cut using the median of the eigenvalues
             self.lambda_cut = np.median(eigvals)
+        # Select the top k eigenvectors and eigenvalues
         k = len(eigvals[eigvals >= self.lambda_cut])
         sampled_sorted_eigvecs = eigvecs[:, :k]
         sampled_sorted_eigvals = eigvals[:k]
@@ -544,28 +590,65 @@ class SPACO:
     def spaco_projection(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Project the sample features onto the SPACO space.
+
+        Returns
+        -------
+        Pspac : np.ndarray
+            The projection of the sample features onto the SPACO space.
+        Vk : np.ndarray
+            The matrix of SPACO projections.
         """
+        # Compute the orthonormal basis U by dividing each eigenvector by the square root of its eigenvalue
         U = self.sampled_sorted_eigvecs / np.sqrt(self.sampled_sorted_eigvals)
+
+        # Project the whitened data onto the orthonormal basis U to obtain the matrix Vk
         Vk = self.whitened_data @ U
+
+        # Calculate the projection of the sample features onto the SPACO space
+        # This involves projecting Vk, then transforming by the graph Laplacian, and finally projecting back
+        # to the original sample feature space
         Pspac = Vk @ Vk.T @ self.graphLaplacian @ self.SF
+
+        # Store the number of SPACO components
         self.nSpacs = Vk.shape[1]
+
+        # Return both the projection into SPACO space and the matrix of SPACO projections
         return Pspac, Vk
 
     def __sigma_eigenvalues(self) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Compute the eigenvalues of the transformed matrix.
+        Compute the eigenvalues of the matrix sigma, which is a k x k matrix
+        representing the weighted sum of the squared eigenvalues of the graph Laplacian
+        matrix.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        sigma_eigh : np.ndarray
+            The eigenvalues of the sigma matrix.
+        sigma : np.ndarray
+            The sigma matrix itself.
         """
 
+        # Compute the orthogonalized (unitary) matrix projection
+        # This is done by taking the eigenvectors of the graph Laplacian
+        # and dividing each eigenvector by the square root of its eigenvalue
         projection = self.__orthogonalize(V=self.Vk, L=self.graphLaplacian)
-        # projection is the orthogonalized (unitary) matrix
+
+        # Sk is the orthogonalized matrix of size k x n
         Sk = projection[:, : self.Vk.shape[1]]
 
-        # print(f"shape of graphLaplacian: {self.graphLaplacian.shape}\n")
-        sigma = Sk.T @ self.graphLaplacian @ self.graphLaplacian @ Sk  # k x k matrix
+        # sigma is the k x k matrix representing the weighted sum of the squared
+        # eigenvalues of the graph Laplacian matrix
+        sigma = Sk.T @ self.graphLaplacian @ self.graphLaplacian @ Sk
 
-        # sigma = self.graphLaplacian @ Sk @ Sk.T @ self.graphLaplacian # n x n matrix
+        # Compute the eigenvalues of the sigma matrix
         sigma_eigh = np.linalg.eigvalsh(sigma)
 
+        # Return both the eigenvalues and the sigma matrix
         return sigma_eigh, sigma
 
     def __psum_chisq(
