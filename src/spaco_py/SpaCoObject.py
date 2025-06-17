@@ -95,29 +95,58 @@ class SPACO:
     def __getattr__(self, name):
         """
         Lazy loading of attributes. Computes the attribute if it is not already cached.
+
+        The cache is stored in the `_cache` attribute of the object.
+
+        The possible attributes that can be lazily loaded are:
+        - whitened_data
+        - spectral_results
+        - graphLaplacian
+        - sampled_sorted_eigvecs
+        - sampled_sorted_eigvals
+        - Pspac
+        - Vk
+        - sigma
+        - sigma_eigh
+        - non_random_eigvals
+        - results_all
+
+        If the attribute is not one of the above, an AttributeError is raised.
         """
         if name in self._cache:
+            # If the attribute is already cached, return it
             return self._cache[name]
 
+        # Compute the attribute if it is not already cached
         if name == "whitened_data":
+            # Compute the whitened data using PCA
             self._cache[name] = self.__pca_whitening()
         elif name == "spectral_results":
+            # Compute the spectral results using the graph Laplacian
             self._cache[name] = self.__spectral_filtering()
         elif name == "graphLaplacian":
+            # Compute the graph Laplacian
             self._cache[name] = self.spectral_results[2]
         elif name == "sampled_sorted_eigvecs":
+            # Compute the sorted eigenvectors of the spectral results
             self._cache[name] = self.spectral_results[0]
         elif name == "sampled_sorted_eigvals":
+            # Compute the sorted eigenvalues of the spectral results
             self._cache[name] = self.spectral_results[1]
         elif name == "Pspac" or name == "Vk":
+            # Compute the projection of the sample features onto the SPACO space
             self._cache["Pspac"], self._cache["Vk"] = self.spaco_projection()
         elif name == "sigma" or name == "sigma_eigh":
+            # Compute the eigenvalues of the graph Laplacian
             self._cache["sigma_eigh"], self._cache["sigma"] = self.__sigma_eigenvalues()
         elif name == "non_random_eigvals":
+            # Cache the non-random eigenvalues
             return self.non_random_eigvals
         elif name == "results_all":
+            # Cache the results of the shuffle decomposition
             return self.results_all
         else:
+            # Raise an AttributeError if the attribute is not one of the above
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{name}'"
             )
@@ -380,7 +409,8 @@ class SPACO:
             # i.e)  the eigenvalues of the randomly permuted whitened data that has
             #       then been rotated in SPACO space
             self._cache["results_all"] = results_all
-            return ci_upper
+            self.lambda_cut = ci_upper
+            return self.lambda_cut
 
         # if there are more than 1 lambdas in the CI, we need to iterate
         # until there is only 1 lambda in the CI or the number of iterations is greater than n_simulations
@@ -433,12 +463,12 @@ class SPACO:
         idx = np.argsort(eigvals)[::-1]
         eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
         if self.compute_nSpacs:
-            lambda_cut = self.__resample_lambda_cut(
+            self.lambda_cut = self.__resample_lambda_cut(
                 tuple(eigvals.tolist())
             )  # make a hashable data structure for cacheing
         else:
-            lambda_cut = np.median(eigvals)
-        k = len(eigvals[eigvals >= lambda_cut])
+            self.lambda_cut = np.median(eigvals)
+        k = len(eigvals[eigvals >= self.lambda_cut])
         sampled_sorted_eigvecs = eigvecs[:, :k]
         sampled_sorted_eigvals = eigvals[:k]
         return sampled_sorted_eigvecs, sampled_sorted_eigvals, self.graphLaplacian
@@ -537,7 +567,7 @@ class SPACO:
 
         # Normalize the scaled data
         # gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
-        print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
+        # print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
 
         # Compute the test statistic
         # calculate the statistic in steps
