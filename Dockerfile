@@ -43,15 +43,23 @@ RUN R -e "library(remotes); remotes::install_github('xzhoulab/SPARK')"
 RUN R -e "library(remotes); remotes::install_version('tidyverse', version='2.0.0')"
 RUN R -e "library(remotes); remotes::install_version('aricode', version='1.0.3')"
 RUN R -e "library(remotes); remotes::install_version('clue', version='0.3.66')"
+RUN R -e "library(remotes); remotes::install_version('mclust', version='6.1.1')"
+RUN R -e "library(remotes); remotes::install_version('proxy', version='0.4.27')"
 
-
+# 0.4.27
 # Home Directory
 WORKDIR /home/rstudio
+
+# Make directory for figure generation scripts
+# RUN mkdir -p /home/rstudio/figure_generation_scripts
 
 # load data 
 #COPY R_scripts/SpaCo_R_kia /home/rstudio/SpaCo_v2_R
 #COPY R_scripts/fig2_scripts /home/rstudio/figure_generation_scripts
-COPY R_scripts/brain_seuratobject_raw.RData /home/rstudio
+#COPY R_scripts/brain_seuratobject_raw.RData /home/rstudio
+#COPY R_scripts/fig2_scripts/Kia*/ home/rstudio/figure_generation_scripts/
+#COPY R_scripts/SpaCo_R_kia /home/rstudio/SpaCo_R_kia
+
 # Expose RStudio Server port
 EXPOSE 8787
 
