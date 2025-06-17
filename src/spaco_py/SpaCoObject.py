@@ -89,7 +89,9 @@ class SPACO:
         self.c: float = c
         self.lambda_cut = None
         self.nSpacs = None
-        self.graphLaplacian = None  # Cache for computed attributes
+        self.graphLaplacian = (1 / self.A.shape[0]) * np.eye(self.A.shape[0]) + (
+            1 / np.abs(self.A).sum()
+        ) * self.A
         self._cache = {}
 
     def __getattr__(self, name):
@@ -364,7 +366,7 @@ class SPACO:
 
         return float(ci_lower), float(ci_upper)
 
-    def replicate(self, n_replicates: int) -> np.ndarray:
+    def __replicate(self, n_replicates: int) -> np.ndarray:
         """
         Replicate the __shuffle_decomp method n_iterations times using multithreading.
 
@@ -438,7 +440,7 @@ class SPACO:
         non_random_eigvals = np.array(non_random_eigvals)
 
         # shuffle / permute the neighbor matrix
-        results_all: np.ndarray = self.replicate(n_replicates)
+        results_all: np.ndarray = self.__replicate(n_replicates)
 
         # Caching the initial results of the shuffle decomposition (
         # ie. the eigenvalues of the whitened data that have been rotated in SPACO space
@@ -476,7 +478,7 @@ class SPACO:
         while len(lambdas_inCI) > 1:
             iterations += 1
             # Adding the batch size to the number of iterations to steadily decrease the CI margins
-            batch_results = self.replicate(batch_size)
+            batch_results = self.__replicate(batch_size)
 
             # Calculate the 95% CI and SE for the new batch of results
             results_all = np.append(results_all, batch_results)
@@ -556,15 +558,11 @@ class SPACO:
         eigenvalues, and the graph Laplacian.
         """
 
-        # number of samples / spots
-        n = self.A.shape[0]
-
         # Compute the graph Laplacian
         # The graph Laplacian is a symmetric matrix that represents the graph structure of
         # the data. It is defined as the sum of the neighbor matrix and the diagonal matrix
         # of node degrees. The graph Laplacian is then normalized by the sum of the node
         # degrees.
-        self.graphLaplacian = (1 / n) * np.eye(n) + (1 / np.abs(self.A).sum()) * self.A
 
         # Compute the eigenvectors and eigenvalues of the graph Laplacian
         M = self.whitened_data.T @ self.graphLaplacian @ self.whitened_data

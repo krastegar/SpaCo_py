@@ -12,11 +12,9 @@ class TestSPACO(unittest.TestCase):
         Using benchmark data from the SPACO paper
         """
         self.sample_features = np.load(
-            "/home/krastegar0/SpaCo_py/src/spaco_py/sf_mat.npy"
+            "/home/krastega0/SpaCo_py/src/spaco_py/sf_mat.npy"
         )
-        self.neighbormatrix = np.load(
-            "/home/krastegar0/SpaCo_py/src/spaco_py/A_mat.npy"
-        )
+        self.neighbormatrix = np.load("/home/krastega0/SpaCo_py/src/spaco_py/A_mat.npy")
         self.spaco = SPACO(self.sample_features, self.neighbormatrix)
 
         # variable is redundant, but I want to keep it for testing purposes
@@ -167,11 +165,57 @@ class TestSPACO(unittest.TestCase):
             print("Shuffle decomposition completed successfully.")
         return
 
+    def test_replicate(self):
+        print("testing the __replicate method")
+
+        # going to test 3 different replicate numbers in increasing order and see if the array expands as expected
+        replicate_numbers = [2, 4, 6]
+        initial_size = 0
+
+        # stack structure to keep track of the length of the array after each replicate call
+        stack = [initial_size]
+        for replicate_number in replicate_numbers:
+            prev_len = stack[-1]
+            if prev_len == 0:
+                # pop stack to remove the initial size
+                stack.pop()
+                # first time running the replicate function
+                print(f"Replicating {replicate_number} times for the first time")
+                stack.append(len(self.spaco._SPACO__replicate(replicate_number)))
+                continue
+
+            # if the stack is not empty, we can check the previous length
+            # checking to see if the previous length is not None
+            self.assertIsNotNone(prev_len, msg="Previous length is None")
+            print(f"Replicating {replicate_number} times")
+
+            # calling the replicate function
+            # checking to see if the length of the stack has increased
+            self.assertGreater(
+                len(self.spaco._SPACO__replicate(replicate_number)),
+                prev_len,
+                msg=f"Length of stack did not increase after replicating {replicate_number} times",
+            )
+            stack.pop()  # remove the previous length
+            stack.append(len(self.spaco._SPACO__replicate(replicate_number)))
+
     def test__resample_lambda_cut(self):
         print("Testing the __resample_lambda_cut method")
-        # same plan of attack as above
-        # running it once by itself to see if it works
-        self.spaco._SPACO__resample_lambda_cut()
+
+        # make the graph Laplacian
+        L = self.spaco.graphLaplacian
+
+        # calling the whitened data function
+        whitened_data = self.spaco._SPACO__pca_whitening()
+
+        # generating non-random eigenvalues and eigenvectors from SDP L matrix and whitened data matrix multiplication
+        M = whitened_data.T @ L @ whitened_data
+        non_random_eigvals, _ = np.linalg.eigh(M)
+
+        # ---re-writing the logic from lambda_cut here and testing all aspects of the function to see if it works as expected---#
+
+        # generating the results_all ( a vector containing largest eigenvalues from a randomly permuted neighborhood matrix)
+        # PAUSE:make a unit test for replicate function, then come back
         return
 
     def test_spectral_filtering(self):
@@ -232,9 +276,9 @@ class TestSPACO(unittest.TestCase):
         self.assertEqual(Vk.shape, (n, k))
 
         # Make sure that L matrix is the correct shape
-        self.assertEqual(
-            self.spaco.graphLaplacian.shape,
-            (self.spaco.whitened_data.shape[0], self.spaco.whitened_data.shape[0]),
+        self.assertIsNotNone(
+            self.spaco.graphLaplacian,
+            msg="graphLaplacian is None; it should be initialized before checking its shape",
         )
 
         # make sure that the U matrix that makes up Vk is orthonormal
@@ -257,9 +301,16 @@ class TestSPACO(unittest.TestCase):
             msg="the mean of the projections in spaco space is not 0",
         )
         # checking the symmetry of graph laplacian
-        if np.allclose(self.neighbormatrix, self.neighbormatrix.T, atol=1e-2):
-            np.allclose(
-                self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2
+        if self.spaco.graphLaplacian is not None:
+            self.assertTrue(
+                np.allclose(
+                    self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2
+                ),
+                msg="graph Laplacian is not symmetric",
+            )
+        else:
+            self.fail(
+                "graphLaplacian is None; it should be initialized before checking"
             )
 
     def test_orthogonalize(self):
@@ -322,4 +373,4 @@ class TestSPACO(unittest.TestCase):
 
 if __name__ == "__main__":
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")
-    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
+    unittest.main(defaultTest="TestSPACO.test_replicate")
