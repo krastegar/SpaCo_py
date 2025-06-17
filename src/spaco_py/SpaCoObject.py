@@ -248,19 +248,47 @@ class SPACO:
     def __pca_whitening(self) -> np.ndarray:
         """
         Perform PCA whitening on the input data.
+
+        This whitening process is done using the eigenvectors and eigenvalues of
+        the covariance matrix of the input data.
+
+        The eigenvectors are sorted in descending order of the corresponding
+        eigenvalues. The top r eigenvectors and eigenvalues are then selected to
+        form a new matrix W_r and diagonal matrix D_r, respectively.
+
+        The input data is then projected onto the column space of W_r and scaled
+        by the inverse square root of D_r to obtain the whitened data.
         """
+        # Compute the covariance matrix of the input data
         cov = np.cov(self.SF, rowvar=False)
+
+        # Compute the eigenvalues and eigenvectors of the covariance matrix
         eigenvalues, eigenvectors = np.linalg.eigh(cov)
+
+        # Sort the eigenvalues and eigenvectors in descending order
         idx = np.argsort(eigenvalues)[::-1]
         eigenvalues = eigenvalues[idx]
         eigenvectors = eigenvectors[:, idx]
+
+        # Compute the total variance and cumulative variance
         total_variance = np.sum(eigenvalues)
         cumulative_variance = np.cumsum(eigenvalues)
+
+        # Find the index of the top r eigenvectors that capture the specified
+        # proportion of variance (self.c)
         r = np.searchsorted(cumulative_variance / total_variance, self.c) + 1
+
+        # Select the top r eigenvectors and eigenvalues
         W_r = eigenvectors[:, :r]
         D_r = np.diag(eigenvalues[:r])
+
+        # Compute the inverse square root of D_r
         D_r_inv_sqrt = np.linalg.inv(np.sqrt(D_r))
+
+        # Project the input data onto the column space of W_r and scale by
+        # the inverse square root of D_r
         whitened_data = np.dot(self.SF, W_r).dot(D_r_inv_sqrt)
+
         return whitened_data
 
     def __shuffle_decomp(self) -> float:
@@ -339,12 +367,43 @@ class SPACO:
     def replicate(self, n_replicates: int) -> np.ndarray:
         """
         Replicate the __shuffle_decomp method n_iterations times using multithreading.
+
+        This method takes in the number of replicates to perform and uses
+        multithreading to perform the __shuffle_decomp method in parallel.
+
+        This is done by creating a ThreadPoolExecutor object, which is a context
+        manager that represents a pool of worker threads. The map method of the
+        executor is then used to apply the __shuffle_decomp method to each element
+        of an iterable (in this case, a range object from 0 to n_replicates-1).
+
+        The results of each call are collected in a list, which is then converted
+        to a numpy array and returned.
+
+        Parameters
+        ----------
+        n_replicates : int
+            The number of times to replicate the __shuffle_decomp method.
+
+        Returns
+        -------
+        results_all : np.ndarray
+            A numpy array containing the results of each replicate.
         """
         with ThreadPoolExecutor() as executor:
+            # Create an iterable from 0 to n_replicates-1
+            iterable = range(n_replicates)
+
+            # Use the map method of the executor to apply the __shuffle_decomp method
+            # to each element of the iterable
             results_all = list(
-                executor.map(lambda _: self.__shuffle_decomp(), range(n_replicates))
+                executor.map(lambda _: self.__shuffle_decomp(), iterable)
             )
-        return np.array(results_all)
+
+            # Convert the list of results to a numpy array
+            results_all = np.array(results_all)
+
+            # Return the numpy array
+            return results_all
 
     @lru_cache(maxsize=None)
     def __resample_lambda_cut(
