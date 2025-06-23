@@ -45,6 +45,7 @@
 
 import numpy as np
 import pandas as pd
+
 import imhoff
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigs
@@ -417,8 +418,8 @@ class SPACO:
     ) -> float:
         """
         Resamples the shuffled adjacency matrix to calculate the confidence interval for the relevant number of SpaCs.
-        Generating a confidence interval from the shuffled M matrix eigenvalues representing random noise. The
-        CI is then used to determine the relevant number of SpaCs.
+        Generating a confidence interval from the shuffled M matrix eigenvalues representing random noise. This is done
+        by using the replicate function to run the __shuffle_decomp method multiple times. The CI is then used to determine the relevant number of SpaCs.
         The method iteratively decreases the confidence interval until the number of eigenvalues within the
         confidence interval is 1 or the number of iterations exceeds n_simulations.
 
@@ -473,6 +474,13 @@ class SPACO:
             self.lambda_cut = ci_upper
             return self.lambda_cut
 
+        # If there is only one lambda in the CI, we can return it
+        if len(lambdas_inCI) == 1:
+            # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
+            self.lambda_cut = lambdas_inCI[0]
+            self._cache["results_all"] = results_all
+            return self.lambda_cut
+
         # if there are more than 1 lambdas in the CI, we need to iterate
         # until there is only 1 lambda in the CI or the number of iterations is greater than n_simulations
         while len(lambdas_inCI) > 1:
@@ -503,6 +511,7 @@ class SPACO:
                     lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
                 )
                 print(f"number of iterations: {iterations}.\n")
+                self._cache["results_all"] = results_all
                 return self.lambda_cut
 
             if iterations >= n_simulations:
@@ -510,12 +519,14 @@ class SPACO:
                     f"Reached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
                 )
                 # if ther are still more than 1 eigenvalue in the CI, we take the upper bound of the CI
+                self._cache["results_all"] = results_all
                 self.lambda_cut = ci_upper
                 return self.lambda_cut
 
         # Ensure a float is always returned
         # If the loop exits without returning, return the current lambda_cut or ci_upper as fallback
         if self.lambda_cut is not None:
+            self._cache["results_all"] = results_all
             return self.lambda_cut
         else:
             return float(ci_upper)

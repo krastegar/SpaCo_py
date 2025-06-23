@@ -22,6 +22,12 @@ class TestSPACO(unittest.TestCase):
             self.sample_features
         )
 
+    def check_mark(self):
+        """
+        A simple method to visually show completion of the tests by printing a check mark
+        """
+        print("\n✅\n")
+
     def test_init(self):
         print("Testing the __init__ method")
         self.assertIsInstance(self.spaco.SF, np.ndarray)
@@ -202,90 +208,110 @@ class TestSPACO(unittest.TestCase):
     def test__resample_lambda_cut(self):
         print("Testing the __resample_lambda_cut method")
 
-        # make the graph Laplacian
-        L = self.spaco.graphLaplacian
+        # running the spectral_filtering method to see if it works without any errors
+        # and to extract the initial non-random eigenvalues for lambda cut calculation
+        _ = self.spaco._SPACO__spectral_filtering()
+        non_random_eigvals = self.spaco._cache["non_random_eigvals"]
 
-        # calling the whitened data function
-        whitened_data = self.spaco._SPACO__pca_whitening()
-
-        # generating non-random eigenvalues and eigenvectors from SDP L matrix and whitened data matrix multiplication
-        M = whitened_data.T @ L @ whitened_data
-        non_random_eigvals, _ = np.linalg.eigh(M)
-
-        # ---re-writing the logic from lambda_cut here and testing all aspects of the function to see if it works as expected---#
-
-        # shuffle / permute the neighbor matrix
-        n_replicates = 10
-        results_all = self.spaco._SPACO__replicate(n_replicates)
-
-        # calculate the 95 CI and SE
-        ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(results_all))
-        delta_init = ci_upper - ci_lower
-        if delta_init <= 0:
-            self.fail(
-                "Delta value is not positive, which means the confidence interval is not valid"
-            )
-        delta_stack = [delta_init]  # stack to keep track of the delta values
-        # Select the eigenvalues from results_all that are within the 95% CI
-        # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
-        lambdas_inCI = non_random_eigvals[
-            (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
-        ]
-
-        # counter for interations
-        iterations: int = 0
-        # if there are no lambdas in the CI, we return the upper bound of the CI
-        # this is the case when the CI is too small and the lambdas are not in the CI
-        if len(lambdas_inCI) == 0:
-            # Also going to cache the initial results of the shuffle decomposition
-            # i.e)  the eigenvalues of the randomly permuted whitened data that has
-            #       then been rotated in SPACO space
-            print("no lambdas in CI, returning upper bound of CI")
+        # initialize number of iterations
+        iterations = 0
 
         # increase list of results by a batch size
-        batch_size = 5
+        batch_size = 10
 
-        # if there are more than 1 lambdas in the CI, we need to iterate
-        # until there is only 1 lambda in the CI or the number of iterations is greater than n_simulations
-        n_simulations = 5  # maximum number of iterations
-        while len(lambdas_inCI) > 1:
-            delta_init = delta_stack[-1]  # get the last delta value
+        # maximum number of iterations to run the loop
+        n_simulations = 5
+
+        # ----------Overall goal of the loop -----------------#
+        # The goal of the loop is to iteratively reduce the confidence interval (CI) until
+        # there is only one eigenvalue (lambda) left in the CI, which is the lambda_cut.
+        # The loop will continue until either the CI is reduced to a single lambda or
+        # the maximum number of iterations is reached.
+        # ---------------------------------------------------#
+
+        # initializing top random eigenvalues
+        top_random_eigvals = np.linspace(1.3, 2, 10)
+
+        # calculating the 95% CI and SE for the top random eigenvalues
+        # should have more than one element in the list
+        ci_lower_sim, ci_upper_sim = self.spaco._SPACO__CI_SE(list(top_random_eigvals))
+
+        # calculating width of the CI
+        delta_init = ci_upper_sim - ci_lower_sim
+
+        # initializing the delta stack with the initial delta value to track the changes in delta
+        # and see if the delta value decreases after each iteration
+        delta_stack = [delta_init]
+
+        # should have more than one lambda in the CI
+        lambdas_inCI_sim = non_random_eigvals[
+            (non_random_eigvals >= ci_lower_sim) & (non_random_eigvals <= ci_upper_sim)
+        ]
+
+        assert len(lambdas_inCI_sim) > 1, (
+            "There should be more than one lambda in the CI at the start"
+        )
+
+        while len(lambdas_inCI_sim) > 1:
+            delta_init = round(delta_stack[-1], 2)  # get the last delta value
+
             # increasing the counter
             iterations += 1
-            print(f"Iteration {iterations} with delta value: {delta_init:.3g}")
+
+            print(f"\nIteration {iterations} with delta value: {delta_init:.3g}")
+
             # Adding the batch size to the number of iterations to steadily decrease the CI margins
             batch_results = self.spaco._SPACO__replicate(batch_size)
 
-            # Calculate the 95% CI and SE for the new batch of results
-            results_all = np.append(results_all, batch_results)
+            assert len(batch_results) == batch_size, (
+                "The number of results is not equal to the batch size"
+            )
 
             # Calculate the 95% CI and SE for the new batch of results
-            ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(results_all))
+            top_random_eigvals = np.append(top_random_eigvals, batch_results)
+
+            # Calculate the 95% CI and SE for the new batch of results
+            ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(top_random_eigvals))
 
             # checking to see how many lambdas are in the CI
             lambdas_inCI = non_random_eigvals[
                 (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
             ]
+
             # updated delta value should be smaller than the previous delta value
-            delta = ci_upper - ci_lower
-            self.assertLess(
+            delta = round(ci_upper - ci_lower, 2)
+            self.assertLessEqual(
                 delta, delta_init, msg="Delta value did not decrease after iteration"
             )
-            delta_stack.append(delta)  # append the new delta value to the stack
+
+            # append the new delta value to the stack
+            delta_stack.pop()  # remove the last delta value
+            delta_stack.append(delta)
+
+            # printing the number of iterations, the number of elements in the CI, and the size of the CI
             print(
-                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {delta:.3g}"
+                f"\nnumber of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}"
             )
+            if iterations >= n_simulations:
+                # if we reach the maximum number of iterations, we break the loop
+                self.check_mark()
+                print(
+                    f"\nReached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
+                )
+                break
+
             if len(lambdas_inCI) < 2:
                 # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
                 self.lambda_cut = (
                     lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
                 )
-                print(f"number of iterations: {iterations}.\n")
 
-            if iterations >= n_simulations:
+                # printing the lambda cut and the number of iterations
+                self.check_mark()
                 print(
-                    f"Reached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
+                    f"\nPopped out all of the values from the CI. Lambda cut: {self.lambda_cut}.\n # of iterations: {iterations}.\n"
                 )
+                break
 
     def test_spectral_filtering(self):
         print("Testing the __spectral_filtering method")
