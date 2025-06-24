@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from spaco_py.SpaCoObject import SPACO
-
+from scipy.stats import ks_2samp
 # filepath: src/spaco_py/test_SpaCoObject.py
 
 
@@ -446,6 +446,35 @@ class TestSPACO(unittest.TestCase):
             msg="Eigenvalues are not between 0 and 1",
         )
 
+        # generate null distribution and compare it against distribution of test statistics for random features
+        # using the ks_2samp test to compare the distributions
+        theoretical_null = [
+            sigma_eigh.T @ np.random.chisquare(df=1, size=self.spaco.Vk.shape[1])
+            for i in range(10000)
+        ]
+
+        # generate the test statistic for this random simulated pattern
+        rand_test_statistic = []
+        for i in range(10000):
+            rand_projection = (
+                np.random.normal(size=self.spaco.SF.shape[0]).T
+                @ self.spaco.graphLaplacian
+                @ self.spaco.Vk
+            )
+            len_proj = rand_projection.T @ rand_projection
+            rand_test_statistic.append(len_proj)
+
+        # compare the two distributions
+        _, p_value = ks_2samp(theoretical_null, rand_test_statistic)
+
+        # p_value should be greater than 0.05
+        if p_value < 0.05:
+            self.fail(
+                "The null distribution is not consistent with the distribution of test statistics for random features"
+            )
+        else:
+            self.check_mark()
+
     def test_spaco_test(self):
         print("Testing the spaco_test method")
         for i in range(self.spaco.Pspac.shape[1]):
@@ -468,4 +497,4 @@ class TestSPACO(unittest.TestCase):
 
 if __name__ == "__main__":
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")
-    unittest.main(defaultTest="TestSPACO.test__resample_lambda_cut")
+    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")

@@ -45,8 +45,9 @@
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
-import imhoff
+from momentchi2 import wf
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigs
 from scipy.stats import t
@@ -61,6 +62,7 @@ class SPACO:
         self,
         sample_features,
         neighbormatrix,
+        coords,
         c=0.95,
         compute_nSpacs=True,
         percentile=95,
@@ -74,6 +76,8 @@ class SPACO:
             The sample features array.
         neighbormatrix : array-like (n_samples, n_samples)
             The neighbor matrix.
+        coords (numpy.ndarray):
+                Array of shape (n_samples, 2) containing the x and y coordinates for each sample point.
         c : float, optional
             The threshold for selecting the minimal number of principal components. Default is 0.95.
         percentile : int, optional
@@ -87,6 +91,7 @@ class SPACO:
         self.compute_nSpacs: bool = compute_nSpacs
         self.SF: np.ndarray = self.__preprocess(sample_features)
         self.A: np.ndarray = self.__check_if_square(neighbormatrix)
+        self.coords: np.ndarray = self.__rotate_coordinates(coords)
         self.c: float = c
         self.lambda_cut = None
         self.nSpacs = None
@@ -449,7 +454,6 @@ class SPACO:
 
         # calculate the 95 CI and SE
         ci_lower, ci_upper = self.__CI_SE(list(results_all))
-        print(f"Inital CI: {ci_lower:.4g} - {ci_upper:.4g}\n")
 
         # Select the eigenvalues from results_all that are within the 95% CI
         # (i.e. the eigenvalues that are not significantly different from the null hypothesis)
@@ -458,12 +462,7 @@ class SPACO:
         ]
 
         iterations: int = 0
-        # iteratively decreasing the CI interval until the lambdas_inCI is 1
-        # or the number of iterations is greater than n_simulations
-        delta: float = ci_upper - ci_lower
-        print(
-            f"INITIAL # of elements in CI: {len(lambdas_inCI)}\n size of CI: {delta:.3g}"
-        )
+
         # if there are no lambdas in the CI, we return the upper bound of the CI
         # this is the case when the CI is too small and the lambdas are not in the CI
         if len(lambdas_inCI) == 0:
@@ -502,15 +501,12 @@ class SPACO:
                 (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
             ]
 
-            print(
-                f"number of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}\nsize of CI: {delta:.3g}"
-            )
             if len(lambdas_inCI) < 2:
                 # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
                 self.lambda_cut = (
                     lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
                 )
-                print(f"number of iterations: {iterations}.\n")
+
                 self._cache["results_all"] = results_all
                 return self.lambda_cut
 
@@ -660,62 +656,31 @@ class SPACO:
         # Return both the eigenvalues and the sigma matrix
         return sigma_eigh, sigma
 
-    def __psum_chisq(
-        self, q, eig_vals, epsabs=float(10 ^ (-6)), epsrel=float(10 ^ (-6)), limit=10000
-    ):
+    def spaco_test(self, x: np.ndarray) -> Tuple[float, float]:
         """
-        Compute the p-value for a chi-squared distribution using Imhof's method.
+        Perform a statistical test in the SPACO framework.
 
-        This method computes the p-value for a given chi-squared test statistic `q`
-        based on the eigenvalues `eig_vals` using Imhof's method, which is a numerical
-        approach to calculate distribution functions of quadratic forms in normal variables.
+        This method scales and normalizes the input vector `x`, computes a test statistic,
+        and evaluates its significance against the distribution of eigenvalues of the
+        graph Laplacian. The test statistic is computed as the squared projection of the
+        normalized `x` onto the SPACO space, represented by the matrix `Vk`.
 
         Parameters
         ----------
-        q : float
-            The chi-squared test statistic value.
-        eig_vals : list[float]
-            The eigenvalues of the matrix for which the p-value is being computed.
-        epsabs : float, optional
-            Absolute error tolerance for the numerical integration (default is 1e-6).
-        epsrel : float, optional
-            Relative error tolerance for the numerical integration (default is 1e-6).
-        limit : int, optional
-            The maximum number of function evaluations allowed during numerical integration (default is 10000).
+        x : np.ndarray
+            The input vector to be tested. It should be a 1D array representing sample features.
 
         Returns
         -------
-        float
-            The computed p-value for the chi-squared distribution.
+        Tuple[float, float]
+            The p-value of the test statistic and the test statistic itself.
+
+        Raises
+        ------
+        AssertionError
+            If the input vector `x` is not centered and scaled correctly.
         """
 
-        # matching data types to contstructor definition in C++ file
-        h = np.repeat(1.0, len(eig_vals)).tolist()
-        delta = np.repeat(0.0, len(eig_vals)).tolist()
-        eig_vals = eig_vals.tolist()
-        q = float(q)
-        lambda_length = len(eig_vals)
-
-        # Compute the p-value for the chi-squared distribution
-        p_val = imhoff.probQsupx(
-            q, eig_vals, lambda_length, h, delta, epsabs, epsrel, limit
-        )
-        # calculating the tail end probability
-        return 1 - p_val
-
-    def spaco_test(self, x: np.ndarray) -> Tuple[float, float]:
-        """
-        Compute the spatially variable test statistic for any given input vector x.
-
-        Returns
-        -------
-        pVal: float
-            The p-value of the test statistic.
-        test_statistic: float
-            The computed test statistic.
-        """
-
-        # Scaling input vector (should this just be centered and not scaled? )
         gene: np.ndarray = (x - x.mean()) / x.std()
         assert np.isclose(gene.mean(), 0, atol=1e-8) and np.isclose(
             gene.std(), 1, atol=1e-8
@@ -726,20 +691,105 @@ class SPACO:
         # printing all the variables berfore the test statistic
 
         # Normalize the scaled data
-        # gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
+        gene = gene / np.repeat(np.sqrt(gene.T @ self.graphLaplacian @ gene), len(gene))
         # print(f"sigma: {self.sigma.shape}\ngene: {gene.shape}")
 
         # Compute the test statistic
         # calculate the statistic in steps
-        Vk_proj_x: np.ndarray = self.Vk.T @ self.graphLaplacian @ gene
+        Vk_proj_x: np.ndarray = gene.T @ self.graphLaplacian @ self.Vk
         test_statistic: float = float(Vk_proj_x.T @ Vk_proj_x)
 
         # print(f'test statistic: {test_statistic}\n\n\n sorted_sigma_eigenvals: {sorted_sigma_eigh[:nSpacs]}')
         # pval test statistic
-        pVal: float = self.__psum_chisq(
-            q=test_statistic, eig_vals=sorted_sigma_eigh[: self.Vk.shape[1]]
-        )
-        print(
-            f"pval: {pVal}\ntest statistic: {test_statistic}\nlambda cut: {self.lambda_cut}"
-        )
+        pVal = 1 - wf(sorted_sigma_eigh, test_statistic)
+
         return pVal, test_statistic
+
+    def plot_spatial_heatmap(
+        self,
+        values,
+        title="Spatial Heatmap",
+        cmap="viridis",
+        point_size=50,
+        rotate_coords=False,
+    ):
+        """
+        Plots a discrete spatial heatmap using scatter plot visualization.
+
+        This function visualizes spatial data by plotting points at specified coordinates,
+        colored according to their associated values. It is useful for displaying spatial
+        patterns, such as gene expression, sensor measurements, or any data with spatial context.
+
+        Args:
+            values (numpy.ndarray):
+                Array of shape (n_samples,) containing the values to be visualized at each coordinate.
+            title (str, optional):
+                Title of the plot. Defaults to "Spatial Heatmap".
+            cmap (str, optional):
+                Name of the matplotlib colormap to use for coloring the points. Defaults to "viridis".
+            point_size (int, optional):
+                Size of the points in the scatter plot. Defaults to 50.
+
+        Returns:
+            None. Displays the heatmap plot.
+
+        Example:
+            >>> coords = np.array([[0, 0], [1, 1], [2, 2]])
+            >>> values = np.array([0.1, 0.5, 0.9])
+            >>> plot_spatial_heatmap(coords, values, title="Example Heatmap", point_size=30)
+
+        Notes:
+            - The function assumes that `coords` and `values` are NumPy arrays of compatible shapes.
+            - The color of each point reflects the corresponding value in the `values` array.
+            - Useful for visualizing spatial patterns in 2D
+        """
+        # if user decides to rotate the coordinates, we do so
+        if rotate_coords:
+            self.coords = self.__rotate_coordinates(self.coords)
+
+        # Ensure values is a numpy array or pandas DataFrame
+        values = np.array(values)
+
+        # Create the scatter plot
+        plt.figure(figsize=(8, 6))
+        scatter = plt.scatter(
+            self.coords[:, 0],
+            self.coords[:, 1],
+            c=values,
+            cmap=cmap,
+            s=point_size,
+            edgecolor="k",
+        )
+        plt.colorbar(scatter, label="Values")
+        plt.title(title)
+        plt.xlabel("X Coordinate")
+        plt.ylabel("Y Coordinate")
+        plt.grid(True)
+        plt.show()
+
+    def __rotate_coordinates(self, coords) -> np.ndarray:
+        """
+        Rotate the coordinates of the SpaCo object by 90 degrees counterclockwise.
+
+        This method modifies the `coords` attribute of the SpaCo object in place.
+        It does not return a value.
+
+        Notes:
+            - The rotation is performed by multiplying the coordinates with a rotation matrix.
+            - The rotation matrix is defined as [[0, 1], [-1, 0]], which corresponds to a 90-degree counterclockwise rotation.
+        """
+        rotation_matrix = np.array([[0, 1], [-1, 0]])
+        # Ensure coords is a numpy array or pandas DataFrame
+        if isinstance(coords, pd.DataFrame):
+            coords = coords.to_numpy()
+        elif not isinstance(coords, np.ndarray):
+            raise ValueError("coords must be a numpy array or pandas DataFrame.")
+
+        # Ensure inputs are NumPy arrays and coords  is 2D with shape (n_samples, 2)
+        coords = coords @ rotation_matrix.T
+        if coords.ndim != 2 or coords.shape[1] != 2:
+            raise ValueError("coords must be a 2D array with shape (n_samples, 2)")
+        return coords
+
+
+# Example usage
