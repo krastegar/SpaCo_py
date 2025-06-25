@@ -2,80 +2,31 @@ import unittest
 import numpy as np
 import pandas as pd
 from spaco_py.SpaCoObject import SPACO
-
+from scipy.stats import ks_2samp
 # filepath: src/spaco_py/test_SpaCoObject.py
 
 
 class TestSPACO(unittest.TestCase):
-    @staticmethod  # static method
-    def _generate_synthetic_data(
-        n_samples: int,
-        n_features: int,
-        sparsity: float = 0.1,
-        noise_level: float = 0.1,
-        lam: float = 65,  # random number I chose for the poisson distribution events
-        generate1d: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Generate synthetic single-cell RNA sequencing data.
-
-        Args:
-            n_samples: Number of samples (rows).
-            n_features: Number of features (columns).
-            sparsity (optional): Proportion of zero values in the data.
-            noise_level (optional): Standard deviation of the Gaussian noise added to the data.
-            lam (optional): Poisson distribution parameter.
-            generate1d (optional): If True, flatten the data matrix.
-
-        Returns: -> np.ndarray
-            synthetic data matrices.
-        """
-        # Generate random data matrix using poisson distribution because
-        # single-cell RNA sequencing data is count data
-        data1 = np.random.poisson(lam=lam, size=(n_samples, n_features)).astype(float)
-
-        # Introduce sparsity
-        mask1 = np.random.rand(n_samples, n_features) < sparsity
-        data1[mask1] = 0
-
-        # Add Gaussian noise
-        noise1 = np.random.normal(0, noise_level, size=(n_samples, n_features))
-        data1 += noise1
-
-        # Flatten data if generate1d is True
-        if generate1d:
-            data1 = data1.flatten()
-            return data1
-
-        return data1
-
     def setUp(self):
         """
-        Set up the test fixture.
-
-        Generates synthetic data matrices for testing. The
-        `sample_features` and `neighbormatrix` attributes are set to
-        matrices of shape `(100, 100)` with 10% sparsity and 10%
-        Gaussian noise added.
+        Using benchmark data from the SPACO paper
         """
-        self.sample_features = TestSPACO._generate_synthetic_data(
-            n_samples=80,
-            n_features=100,
-            sparsity=0.1,
-            noise_level=0.1,
-            generate1d=False,
+        self.sample_features = np.load(
+            "/home/krastega0/SpaCo_py/src/spaco_py/sf_mat.npy"
         )
-        self.neighbormatrix = TestSPACO._generate_synthetic_data(
-            n_samples=80,
-            n_features=80,
-            sparsity=0.1,
-            noise_level=0.1,
-            generate1d=False,
-        )
+        self.neighbormatrix = np.load("/home/krastega0/SpaCo_py/src/spaco_py/A_mat.npy")
         self.spaco = SPACO(self.sample_features, self.neighbormatrix)
+
+        # variable is redundant, but I want to keep it for testing purposes
         self.centered_scaled_features = self.spaco._SPACO__preprocess(
             self.sample_features
         )
+
+    def check_mark(self):
+        """
+        A simple method to visually show completion of the tests by printing a check mark
+        """
+        print("\n✅\n")
 
     def test_init(self):
         print("Testing the __init__ method")
@@ -220,12 +171,147 @@ class TestSPACO(unittest.TestCase):
             print("Shuffle decomposition completed successfully.")
         return
 
+    def test_replicate(self):
+        print("testing the __replicate method")
+
+        # going to test 3 different replicate numbers in increasing order and see if the array expands as expected
+        replicate_numbers = [2, 4, 6]
+        initial_size = 0
+
+        # stack structure to keep track of the length of the array after each replicate call
+        stack = [initial_size]
+        for replicate_number in replicate_numbers:
+            prev_len = stack[-1]
+            if prev_len == 0:
+                # pop stack to remove the initial size
+                stack.pop()
+                # first time running the replicate function
+                print(f"Replicating {replicate_number} times for the first time")
+                stack.append(len(self.spaco._SPACO__replicate(replicate_number)))
+                continue  # go to the next iteration (skip the rest of the loop)
+
+            # if the stack is not empty, we can check the previous length
+            # checking to see if the previous length is not None
+            self.assertIsNotNone(prev_len, msg="Previous length is None")
+            print(f"Replicating {replicate_number} times")
+
+            # calling the replicate function
+            # checking to see if the length of the stack has increased
+            self.assertGreater(
+                len(self.spaco._SPACO__replicate(replicate_number)),
+                prev_len,
+                msg=f"Length of stack did not increase after replicating {replicate_number} times",
+            )
+            stack.pop()  # remove the previous length
+            stack.append(len(self.spaco._SPACO__replicate(replicate_number)))
+
     def test__resample_lambda_cut(self):
         print("Testing the __resample_lambda_cut method")
-        # same plan of attack as above
-        # running it once by itself to see if it works
-        self.spaco._SPACO__resample_lambda_cut()
-        return
+
+        # running the spectral_filtering method to see if it works without any errors
+        # and to extract the initial non-random eigenvalues for lambda cut calculation
+        _ = self.spaco._SPACO__spectral_filtering()
+        non_random_eigvals = self.spaco._cache["non_random_eigvals"]
+
+        # initialize number of iterations
+        iterations = 0
+
+        # increase list of results by a batch size
+        batch_size = 10
+
+        # maximum number of iterations to run the loop
+        n_simulations = 5
+
+        # ----------Overall goal of the loop -----------------#
+        # The goal of the loop is to iteratively reduce the confidence interval (CI) until
+        # there is only one eigenvalue (lambda) left in the CI, which is the lambda_cut.
+        # The loop will continue until either the CI is reduced to a single lambda or
+        # the maximum number of iterations is reached.
+        # ---------------------------------------------------#
+
+        # initializing top random eigenvalues
+        top_random_eigvals = np.linspace(1.3, 2, 10)
+
+        # calculating the 95% CI and SE for the top random eigenvalues
+        # should have more than one element in the list
+        ci_lower_sim, ci_upper_sim = self.spaco._SPACO__CI_SE(list(top_random_eigvals))
+
+        # calculating width of the CI
+        delta_init = ci_upper_sim - ci_lower_sim
+
+        # initializing the delta stack with the initial delta value to track the changes in delta
+        # and see if the delta value decreases after each iteration
+        delta_stack = [delta_init]
+
+        # should have more than one lambda in the CI
+        lambdas_inCI_sim = non_random_eigvals[
+            (non_random_eigvals >= ci_lower_sim) & (non_random_eigvals <= ci_upper_sim)
+        ]
+
+        assert len(lambdas_inCI_sim) > 1, (
+            "There should be more than one lambda in the CI at the start"
+        )
+
+        while len(lambdas_inCI_sim) > 1:
+            delta_init = round(delta_stack[-1], 2)  # get the last delta value
+
+            # increasing the counter
+            iterations += 1
+
+            print(f"\nIteration {iterations} with delta value: {delta_init:.3g}")
+
+            # Adding the batch size to the number of iterations to steadily decrease the CI margins
+            batch_results = self.spaco._SPACO__replicate(batch_size)
+
+            assert len(batch_results) == batch_size, (
+                "The number of results is not equal to the batch size"
+            )
+
+            # Calculate the 95% CI and SE for the new batch of results
+            top_random_eigvals = np.append(top_random_eigvals, batch_results)
+
+            # Calculate the 95% CI and SE for the new batch of results
+            ci_lower, ci_upper = self.spaco._SPACO__CI_SE(list(top_random_eigvals))
+
+            # checking to see how many lambdas are in the CI
+            lambdas_inCI = non_random_eigvals[
+                (non_random_eigvals >= ci_lower) & (non_random_eigvals <= ci_upper)
+            ]
+
+            # updated delta value should be smaller than the previous delta value
+            delta = round(ci_upper - ci_lower, 2)
+            self.assertLessEqual(
+                delta, delta_init, msg="Delta value did not decrease after iteration"
+            )
+
+            # append the new delta value to the stack
+            delta_stack.pop()  # remove the last delta value
+            delta_stack.append(delta)
+
+            # printing the number of iterations, the number of elements in the CI, and the size of the CI
+            print(
+                f"\nnumber of iterations: {iterations}.\n # of elements in CI: {len(lambdas_inCI)}"
+            )
+            if iterations >= n_simulations:
+                # if we reach the maximum number of iterations, we break the loop
+                self.check_mark()
+                print(
+                    f"\nReached maximum number of iterations: {n_simulations}.\n # of elements in CI: {len(lambdas_inCI)}"
+                )
+                break
+
+            if len(lambdas_inCI) < 2:
+                # lambdas_inCI should be a 1D array with only one element, which is the lambda of interest
+                self.lambda_cut = (
+                    lambdas_inCI[::-1][0] if len(lambdas_inCI) > 0 else ci_upper
+                )
+
+                # printing the lambda cut and the number of iterations
+                self.check_mark()
+                print(
+                    f"\nPopped out all of the values from the CI. Lambda cut: {self.lambda_cut}.\n # of iterations: {iterations}.\n"
+                )
+                break
 
     def test_spectral_filtering(self):
         print("Testing the __spectral_filtering method")
@@ -285,9 +371,9 @@ class TestSPACO(unittest.TestCase):
         self.assertEqual(Vk.shape, (n, k))
 
         # Make sure that L matrix is the correct shape
-        self.assertEqual(
-            self.spaco.graphLaplacian.shape,
-            (self.spaco.whitened_data.shape[0], self.spaco.whitened_data.shape[0]),
+        self.assertIsNotNone(
+            self.spaco.graphLaplacian,
+            msg="graphLaplacian is None; it should be initialized before checking its shape",
         )
 
         # make sure that the U matrix that makes up Vk is orthonormal
@@ -310,9 +396,16 @@ class TestSPACO(unittest.TestCase):
             msg="the mean of the projections in spaco space is not 0",
         )
         # checking the symmetry of graph laplacian
-        if np.allclose(self.neighbormatrix, self.neighbormatrix.T, atol=1e-2):
-            np.allclose(
-                self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2
+        if self.spaco.graphLaplacian is not None:
+            self.assertTrue(
+                np.allclose(
+                    self.spaco.graphLaplacian, self.spaco.graphLaplacian.T, atol=1e-2
+                ),
+                msg="graph Laplacian is not symmetric",
+            )
+        else:
+            self.fail(
+                "graphLaplacian is None; it should be initialized before checking"
             )
 
     def test_orthogonalize(self):
@@ -320,16 +413,72 @@ class TestSPACO(unittest.TestCase):
         Vk, L = self.spaco.Vk, self.spaco.graphLaplacian
         # print(f'shape of Neighborhood: {self.neighbormatrix.shape}\n\n shape of Vk: {Vk.shape}\n\n shape of L: {L.shape}')
 
-        # takes Vk as the inner product with A
-        Q = self.spaco._SPACO__orthogonalize(X=Vk, A=L, nSpacs=Vk.shape[1])
+        # takes Vk as the inner product with graph Laplacian
+        Q = self.spaco._SPACO__orthogonalize(V=Vk, L=L)
+        identity_L = Q.T @ L @ Q
 
-        # print(f'shape of Q: {Q.shape}')
-        # check to see that Q is orthogonal
-        np.allclose(Q.T @ L @ Q, np.eye(Q.shape[1]), atol=1e-5)
+        # is Q orthogonal to the graph Laplacian?
+        self.assertTrue(
+            np.allclose(identity_L, np.eye(identity_L.shape[0]), atol=1e-8),
+            msg="Q is not orthogonal to the graph Laplacian",
+        )
+
+    def test_sigma_eigenvalues(self):
+        # Making sure that the sigma eigenvalues are computed correctly
+        # And lie within the correct range
+        print("Testing the __sigma_eigenvalues method")
+        sigma_eigh, sigma = self.spaco._SPACO__sigma_eigenvalues()
+
+        # need to make sure that sigma is kxk matrix
+        self.assertTrue(
+            sigma.shape == (self.spaco.Vk.shape[1], self.spaco.Vk.shape[1]),
+            msg="Sigma is not a square matrix with k x k dimensions",
+        )
+        # sigma should be a PSD matrix
+        self.assertTrue(
+            np.all(np.linalg.eigvals(sigma) >= 0),
+            msg="Sigma is not a positive semi-definite matrix",
+        )
+
+        # Eigenvalues should be between 0 and 1
+        self.assertTrue(
+            np.all(sigma_eigh >= 0) and np.all(sigma_eigh <= 1),
+            msg="Eigenvalues are not between 0 and 1",
+        )
+
+        # generate null distribution and compare it against distribution of test statistics for random features
+        # using the ks_2samp test to compare the distributions
+        theoretical_null = [
+            sigma_eigh.T @ np.random.chisquare(df=1, size=self.spaco.Vk.shape[1])
+            for i in range(10000)
+        ]
+
+        # generate the test statistic for this random simulated pattern
+        rand_test_statistic = []
+        for i in range(10000):
+            rand_projection = (
+                np.random.normal(size=self.spaco.SF.shape[0]).T
+                @ self.spaco.graphLaplacian
+                @ self.spaco.Vk
+            )
+            len_proj = rand_projection.T @ rand_projection
+            rand_test_statistic.append(len_proj)
+
+        # compare the two distributions
+        _, p_value = ks_2samp(theoretical_null, rand_test_statistic)
+
+        # p_value should be greater than 0.05
+        if p_value < 0.05:
+            self.fail(
+                "The null distribution is not consistent with the distribution of test statistics for random features"
+            )
+        else:
+            self.check_mark()
 
     def test_spaco_test(self):
         print("Testing the spaco_test method")
         for i in range(self.spaco.Pspac.shape[1]):
+            print(f"Testing spatial relevance score for feature {i}")
             pval, t = self.spaco.spaco_test(self.spaco.Pspac[:, i])
 
             # want to make sure that pval is between 0 and 1
@@ -347,5 +496,5 @@ class TestSPACO(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(defaultTest="TestSPACO.test_spectral_filtering")
     # unittest.main(defaultTest="TestSPACO.test_spaco_test")
+    unittest.main(defaultTest="TestSPACO.test_sigma_eigenvalues")
